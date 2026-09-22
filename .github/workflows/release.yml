@@ -1,0 +1,117 @@
+name: ahko Release Pipeline
+
+on:
+  workflow_run:
+    workflows: ["ahko CI Gate"]
+    types:
+      - completed
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Get version from CHANGELOG
+        id: version
+        run: |
+          VERSION=$(grep -m1 '## \[' CHANGELOG.md | sed 's/## \[\([^]]*\)\].*/\1/')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Extract notes from CHANGELOG
+        id: notes
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          NOTES=$(awk "/## \[${VERSION}\]/{found=1; next} found && /^## \[/{exit} found{print}" CHANGELOG.md)
+          echo "notes<<EOF" >> $GITHUB_OUTPUT
+          echo "$NOTES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Extract title from CHANGELOG
+        id: title
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TITLE=$(grep -m1 "## \[${VERSION}\]" CHANGELOG.md | sed 's/## \[[^]]*\] - [0-9-]* — //')
+          echo "title=$TITLE" >> $GITHUB_OUTPUT
+
+      - name: Update files and commit
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          sed -i "s/export const VERSION = \"[^\"]*\"/export const VERSION = \"${VERSION}\"/" src/version.ts
+          npm pkg set version=${VERSION}
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add src/version.ts package.json package-lock.json
+          git diff --staged --quiet || git commit -m "chore: update version to v${VERSION}"
+          git push
+          git tag "v${VERSION}" || true
+          git push origin "v${VERSION}" || true
+
+      - name: Install dependencies & Build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Package source code
+        run: |
+          mkdir dist-zip
+          VERSION="${{ steps.version.outputs.version }}"
+          git archive --format=zip -o dist-zip/ahko-source-${VERSION}.zip HEAD
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: "v${{ steps.version.outputs.version }}: ${{ steps.title.outputs.title }}"
+          body: |
+            ${{ steps.notes.outputs.notes }}
+
+            ## 📦 Installation
+
+            ```bash
+            npm install @mrjacket/ahko
+            ```
+
+            View [Full CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md)
+          files: dist-zip/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish to NPM
+        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Setup Node for GitHub Packages
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://npm.pkg.github.com"
+          scope: "@${{ github.repository_owner }}"
+
+      - name: Publish to GitHub Packages
+        run: |
+          npm pkg set name="@${{ github.repository_owner }}/ahko"
+          npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

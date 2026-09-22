@@ -1,0 +1,16 @@
+# Source
+src/
+
+# Dev config
+*.config.ts
+tsconfig.json
+
+# Dev tooling
+.github/
+scripts/
+docs/
+
+# Logs
+*.log
+.env
+.env.*

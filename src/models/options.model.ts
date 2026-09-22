@@ -1,0 +1,37 @@
+import type { TScheduleStrategy } from "./strategy.model.js";
+
+/**
+ * Options to configure a specific scheduled task.
+ */
+export interface IScheduleOptions {
+  /**
+   * Scheduling strategy to use.
+   * @default "immediate"
+   */
+  strategy?: TScheduleStrategy;
+
+  /**
+   * Delay in milliseconds before queuing or executing the task.
+   * Applicable when strategy is "delay".
+   */
+  delay?: number;
+
+  /**
+   * External cancellation signal.
+   * If aborted before start, the task is removed from the queue without execution.
+   * If aborted while running, the abort event is propagated to the task context signal.
+   */
+  signal?: AbortSignal;
+}
+
+/**
+ * Global configuration options for the Ahko scheduler instance.
+ */
+export interface IAhkoOptions {
+  /**
+   * Maximum number of tasks allowed to execute concurrently.
+   * Must be an integer greater than or equal to 1, or Infinity.
+   * @default Infinity
+   */
+  concurrency?: number;
+}

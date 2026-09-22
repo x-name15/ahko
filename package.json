@@ -1,0 +1,62 @@
+{
+  "name": "@mrjacket/ahko",
+  "version": "0.1.0",
+  "description": "A low-energy task scheduler for JavaScript and TypeScript. Let your code chill.",
+  "type": "module",
+  "main": "dist/index.cjs",
+  "module": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "npm run build:js && npm run build:types",
+    "build:js": "tsup",
+    "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
+    "prepublishOnly": "npm run build && npm test",
+    "test": "vitest run",
+    "test:package": "node scripts/package-smoke-test.mjs",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "license": "GPL-3.0-only",
+  "author": {
+    "name": "x-name15",
+    "url": "https://github.com/x-name15"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/x-name15/ahko.git"
+  },
+  "homepage": "https://github.com/x-name15/ahko#readme",
+  "bugs": {
+    "url": "https://github.com/x-name15/ahko/issues"
+  },
+  "keywords": [
+    "scheduler",
+    "queue",
+    "concurrency",
+    "delay",
+    "abortsignal",
+    "async"
+  ],
+  "devDependencies": {
+    "@types/node": "^22.13.0",
+    "tsup": "^8.3.6",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
+  }
+}
