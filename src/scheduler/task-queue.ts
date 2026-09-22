@@ -3,6 +3,7 @@ import type { IScheduleOptions } from "../models/options.model.js";
 import type { IAhkoStats } from "../models/stats.model.js";
 import { ETaskState } from "../models/state.model.js";
 import { EScheduleStrategy } from "../models/strategy.model.js";
+import { calculateBackoff } from "../retry/backoff.js";
 import { IdleScheduler, type IIdleHandle } from "./idle-scheduler.js";
 import { TaskRunner } from "./task-runner.js";
 
@@ -20,6 +21,14 @@ interface IDelayedEntry {
 interface IIdleEntry {
   runner: TaskRunner<unknown>;
   handle: IIdleHandle;
+}
+
+/**
+ * Entry tracking backoff delay timers for retry attempts.
+ */
+interface IRetryEntry {
+  runner: TaskRunner<unknown>;
+  timerId: ReturnType<typeof setTimeout>;
 }
 
 /**
@@ -41,6 +50,12 @@ export class TaskQueue {
 
   /** Set of tasks currently awaiting an idle opportunity */
   private readonly idleEntries = new Set<IIdleEntry>();
+
+  /** Set of tasks currently awaiting a retry backoff timer */
+  private readonly retryEntries = new Set<IRetryEntry>();
+
+  /** WeakMap associating task runners with their scheduling options */
+  private readonly runnerOptions = new WeakMap<TaskRunner<unknown>, IScheduleOptions>();
 
   /** Cumulative completed tasks counter */
   private completedTasks = 0;
@@ -89,6 +104,45 @@ export class TaskQueue {
       throw new AhkoConfigurationError(
         `Unsupported schedule strategy "${String(strategy)}". Supported strategies: "immediate", "delay", "idle".`
       );
+    }
+
+    if (options?.retry) {
+      if (
+        typeof options.retry.attempts !== "number" ||
+        Number.isNaN(options.retry.attempts) ||
+        options.retry.attempts < 1 ||
+        !Number.isInteger(options.retry.attempts)
+      ) {
+        throw new AhkoConfigurationError(
+          `Invalid retry attempts "${options.retry.attempts}". attempts must be an integer greater than or equal to 1.`
+        );
+      }
+
+      if (
+        options.retry.baseDelay !== undefined &&
+        (typeof options.retry.baseDelay !== "number" ||
+          Number.isNaN(options.retry.baseDelay) ||
+          options.retry.baseDelay < 0)
+      ) {
+        throw new AhkoConfigurationError(
+          `Invalid retry baseDelay "${options.retry.baseDelay}". baseDelay must be a non-negative number in milliseconds.`
+        );
+      }
+
+      if (
+        options.retry.maxDelay !== undefined &&
+        (typeof options.retry.maxDelay !== "number" ||
+          Number.isNaN(options.retry.maxDelay) ||
+          options.retry.maxDelay < 0)
+      ) {
+        throw new AhkoConfigurationError(
+          `Invalid retry maxDelay "${options.retry.maxDelay}". maxDelay must be a non-negative number in milliseconds.`
+        );
+      }
+    }
+
+    if (options) {
+      this.runnerOptions.set(runner as TaskRunner<unknown>, options);
     }
 
     if (runner.state === ETaskState.CANCELLED) {
@@ -238,27 +292,96 @@ export class TaskQueue {
 
   /**
    * Internal execution of an active task runner.
-   * Settle caller promise strictly after stats and active status are updated.
    */
   private async executeRunner(runner: TaskRunner<unknown>): Promise<void> {
+    const options = this.runnerOptions.get(runner);
+
     try {
       const result = await runner.run();
       this.completedTasks++;
       this.activeRunners.delete(runner);
+      this.runnerOptions.delete(runner);
       runner.resolve(result);
     } catch (error) {
       if (runner.state === ETaskState.CANCELLED) {
         this.cancelledTasks++;
-      } else if (runner.state === ETaskState.TIMED_OUT) {
+        this.activeRunners.delete(runner);
+        this.runnerOptions.delete(runner);
+        runner.reject(error);
+        return;
+      }
+
+      const shouldRetry = await runner.canRetry(error, options?.retry);
+      if (shouldRetry) {
+        // Free concurrency slot immediately during backoff
+        this.activeRunners.delete(runner);
+        this.scheduleRetry(runner, options);
+        return;
+      }
+
+      if (runner.state === ETaskState.TIMED_OUT) {
         this.timedOutTasks++;
       } else {
         this.failedTasks++;
       }
       this.activeRunners.delete(runner);
+      this.runnerOptions.delete(runner);
       runner.reject(error);
     } finally {
       this.pump();
     }
+  }
+
+  /**
+   * Schedules a retry attempt following backoff delay,
+   * without holding a concurrency slot.
+   */
+  private scheduleRetry(runner: TaskRunner<unknown>, options?: IScheduleOptions): void {
+    const backoffDelay = calculateBackoff(runner.attempt - 1, options?.retry);
+
+    if (backoffDelay === 0) {
+      runner.onCancel = () => {
+        const index = this.queue.indexOf(runner);
+        if (index !== -1) {
+          this.queue.splice(index, 1);
+          this.cancelledTasks++;
+        }
+      };
+      this.queue.push(runner);
+      this.pump();
+      return;
+    }
+
+    const retryEntry: IRetryEntry = {
+      runner,
+      timerId: setTimeout(() => {
+        this.retryEntries.delete(retryEntry);
+        if (runner.state === ETaskState.CANCELLED) {
+          return;
+        }
+
+        runner.onCancel = () => {
+          const index = this.queue.indexOf(runner);
+          if (index !== -1) {
+            this.queue.splice(index, 1);
+            this.cancelledTasks++;
+          }
+        };
+
+        this.queue.push(runner);
+        this.pump();
+      }, backoffDelay),
+    };
+
+    this.retryEntries.add(retryEntry);
+
+    runner.onCancel = () => {
+      if (this.retryEntries.has(retryEntry)) {
+        clearTimeout(retryEntry.timerId);
+        this.retryEntries.delete(retryEntry);
+        this.cancelledTasks++;
+      }
+    };
   }
 
   /**
@@ -269,7 +392,11 @@ export class TaskQueue {
   public getStats(): IAhkoStats {
     return Object.freeze({
       activeTasks: this.activeRunners.size,
-      pendingTasks: this.queue.length + this.delayedEntries.size + this.idleEntries.size,
+      pendingTasks:
+        this.queue.length +
+        this.delayedEntries.size +
+        this.idleEntries.size +
+        this.retryEntries.size,
       completedTasks: this.completedTasks,
       failedTasks: this.failedTasks,
       cancelledTasks: this.cancelledTasks,

@@ -23,4 +23,14 @@ export type {
   IAhkoOptions,
   IAhkoStats,
   TScheduleStrategy,
+  IRetryOptions,
+  TRetryBackoff,
+  TRetryPredicate,
 } from "./models/index.js";
+
+// Retry utilities
+export {
+  calculateBackoff,
+  DEFAULT_BASE_DELAY,
+  DEFAULT_MAX_DELAY,
+} from "./retry/index.js";

@@ -1,5 +1,6 @@
 import { AhkoCancellationError } from "../errors/cancellation.error.js";
 import type { ITaskContext } from "../models/context.model.js";
+import type { IRetryOptions } from "../models/retry.model.js";
 import { ETaskState } from "../models/state.model.js";
 import type { ITask } from "../models/task.model.js";
 
@@ -84,12 +85,16 @@ export class TaskRunner<T> {
     return this._state;
   }
 
+  /** Current execution attempt count (1-indexed) */
+  public attempt = 1;
+
   /**
    * Resolves the deferred promise.
    *
    * @param value - Value to resolve with.
    */
   public resolve(value: T): void {
+    this.cleanup();
     this.resolvePromise(value);
   }
 
@@ -99,7 +104,44 @@ export class TaskRunner<T> {
    * @param reason - Reason to reject with.
    */
   public reject(reason: unknown): void {
+    this.cleanup();
     this.rejectPromise(reason);
+  }
+
+  /**
+   * Evaluates if the task should be retried following an execution failure.
+   *
+   * @param error - The error encountered during the attempt.
+   * @param retryOptions - Configured retry policy.
+   * @returns A promise resolving to true if retry should proceed, false otherwise.
+   */
+  public async canRetry(error: unknown, retryOptions?: IRetryOptions): Promise<boolean> {
+    if (this._state === ETaskState.CANCELLED || this.abortController.signal.aborted) {
+      return false;
+    }
+
+    if (!retryOptions || typeof retryOptions.attempts !== "number") {
+      return false;
+    }
+
+    if (this.attempt >= retryOptions.attempts) {
+      return false;
+    }
+
+    if (typeof retryOptions.shouldRetry === "function") {
+      try {
+        const allowed = await retryOptions.shouldRetry(error, this.attempt);
+        if (!allowed) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+    }
+
+    this.attempt++;
+    this._state = ETaskState.PENDING;
+    return true;
   }
 
   /**
@@ -122,11 +164,8 @@ export class TaskRunner<T> {
     try {
       const result = await this.task(context);
       this._state = ETaskState.COMPLETED;
-      this.cleanup();
       return result;
     } catch (error) {
-      this.cleanup();
-
       const isCancelled =
         (this._state as ETaskState) === ETaskState.CANCELLED ||
         this.abortController.signal.aborted;

@@ -1,3 +1,4 @@
+import type { IRetryOptions } from "./retry.model.js";
 import type { TScheduleStrategy } from "./strategy.model.js";
 
 /**
@@ -22,6 +23,11 @@ export interface IScheduleOptions {
    * Forwards to requestIdleCallback({ timeout }) when running in browser runtimes.
    */
   idleTimeout?: number;
+
+  /**
+   * Automatic retry options for transient failure handling.
+   */
+  retry?: IRetryOptions;
 
   /**
    * External cancellation signal.

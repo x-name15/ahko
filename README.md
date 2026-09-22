@@ -97,7 +97,51 @@ await ahko.schedule(
 );
 ```
 
-### 3. First-Class Cancellation (`AbortSignal`)
+### 3. Opportunistic Idle Execution
+
+Schedule work to run when the runtime is idle (using browser `requestIdleCallback`, Node.js `setImmediate`, or universal fallback):
+
+```typescript
+// Dedicated convenience method
+await ahko.idle(async ({ signal }) => {
+  await computeBackgroundAnalytics({ signal });
+});
+
+// Or via schedule options with maximum wait timeout
+await ahko.schedule(
+  async ({ signal }) => {
+    await performLowPriorityWork({ signal });
+  },
+  {
+    strategy: "idle",
+    idleTimeout: 5000, // Forces execution if idle window doesn't appear in 5s
+  }
+);
+```
+
+### 4. Resilient Retries & Backoff
+
+Automatically retry failed tasks with configurable exponential or linear backoff and full jitter:
+
+```typescript
+const result = await ahko.schedule(
+  async ({ signal }) => {
+    return callExternalService({ signal });
+  },
+  {
+    retry: {
+      attempts: 3,            // 1 initial run + up to 2 retries
+      backoff: "exponential", // "exponential" | "linear" | "none"
+      baseDelay: 250,         // starting delay in ms
+      maxDelay: 5000,         // maximum delay cap in ms
+      jitter: true,           // randomize backoff to prevent thundering herds
+      shouldRetry: (error) => isNetworkError(error),
+    },
+  }
+);
+```
+
+### 5. First-Class Cancellation (`AbortSignal`)
 
 AHKO provides native, cooperative cancellation:
 
@@ -116,7 +160,7 @@ const taskPromise = ahko.schedule(
 controller.abort();
 ```
 
-### 4. Telemetry (`stats`)
+### 6. Telemetry (`stats`)
 
 Inspect real-time scheduler state without synthetic metrics:
 
@@ -137,6 +181,19 @@ console.log(stats);
 
 ---
 
+## Documentation
+
+Comprehensive guides and technical documentation are available in the [`docs/`](./docs) directory:
+
+| Document | Description |
+|---|---|
+| [**Getting Started**](./docs/getting-started.md) | Quickstart guide, installation, and fundamental usage patterns. |
+| [**Library API**](./docs/library.md) | Complete programmatic API reference, TypeScript interfaces, and options. |
+| [**Architecture**](./docs/architecture.md) | Architectural specifications, lifecycle state machine, and design decisions. |
+| [**Roadmap**](./docs/roadmap.md) | Milestone progression from 0.1.0 through 1.0.0. |
+
+---
+
 ## API Reference
 
 ### `new Ahko(options?: IAhkoOptions)`
@@ -151,18 +208,27 @@ Creates an AHKO scheduler instance.
 
 Schedules an asynchronous task with full return type inference.
 
-- `task`: `(context: ITaskContext) => Promise<T> | T`
-- `options.strategy`: `"immediate"` (default) or `"delay"`.
-- `options.delay`: Delay in milliseconds when strategy is `"delay"`.
-- `options.signal`: Optional `AbortSignal` for cancellation.
+| Option | Type | Default | Description |
+|---|---|---|---|
+| `strategy` | `"immediate" \| "delay" \| "idle"` | `"immediate"` | Scheduling execution strategy. |
+| `delay` | `number` | `0` | Delay in milliseconds when strategy is `"delay"`. |
+| `idleTimeout` | `number` | `undefined` | Maximum time to wait for idle window before forcing queue entry. |
+| `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
+| `signal` | `AbortSignal` | `undefined` | Optional external `AbortSignal` for cooperative cancellation. |
+
+### `ahko.idle<T>(task: ITask<T>, options?: Omit<IScheduleOptions, "strategy">): Promise<T>`
+
+Convenience method scheduling a task under `strategy: "idle"`.
 
 ### `ahko.stats(): IAhkoStats`
 
-Returns a snapshot of current task counters and capacity.
+Returns a snapshot of current task counters and queue capacity.
 
 ---
 
 ## Errors
+
+All scheduler errors inherit from `AhkoError`:
 
 - `AhkoError`: Base class for all scheduler errors.
 - `AhkoCancellationError`: Thrown when a task is aborted.

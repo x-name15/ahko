@@ -11,6 +11,9 @@ const required = [
   "AhkoTimeoutError",
   "EScheduleStrategy",
   "ETaskState",
+  "calculateBackoff",
+  "DEFAULT_BASE_DELAY",
+  "DEFAULT_MAX_DELAY",
 ];
 
 const missing = required.filter((name) => !(name in pkg));

@@ -94,6 +94,30 @@ await ahko.idle(async ({ signal }) => {
 });
 ```
 
+### Automatic Retries with Exponential Backoff
+Configure resilient retries with optional jitter to spread out retries and prevent thundering herd problems:
+
+```typescript
+const result = await ahko.schedule(
+  async ({ signal, taskId }) => {
+    return fetchUnstableEndpoint({ signal });
+  },
+  {
+    retry: {
+      attempts: 3,                // 1 initial run + up to 2 retries
+      backoff: "exponential",     // "exponential" | "linear" | "none"
+      baseDelay: 200,             // starts at 200ms
+      maxDelay: 5000,             // caps at 5 seconds
+      jitter: true,               // full jitter randomization
+      shouldRetry: (error, attempt) => {
+        // Only retry network errors or 5xx server issues
+        return error instanceof NetworkError;
+      },
+    },
+  }
+);
+```
+
 ---
 
 ## 4. Cancellation with `AbortSignal`

@@ -43,6 +43,7 @@ Schedules a task for controlled execution. Preserves the exact return type `T` o
 | `strategy` | `EScheduleStrategy \| "immediate" \| "delay" \| "idle"` | `"immediate"` | Scheduling strategy. |
 | `delay` | `number` | `0` | Delay duration in milliseconds (required when strategy is `"delay"`). |
 | `idleTimeout` | `number` | `undefined` | Maximum time in ms to wait for idle opportunity before forcing queue execution. |
+| `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
 | `signal` | `AbortSignal` | `undefined` | Optional external abort signal for cooperative cancellation. |
 
 ##### Throws
@@ -109,6 +110,18 @@ enum EScheduleStrategy {
 }
 ```
 
+### `IRetryOptions`
+```typescript
+interface IRetryOptions {
+  attempts: number;            // Total execution attempts (e.g. 3 = initial + 2 retries)
+  backoff?: "exponential" | "linear" | "none"; // Default: "exponential"
+  baseDelay?: number;          // Starting backoff delay in ms (default: 250)
+  maxDelay?: number;           // Maximum delay cap in ms (default: 10000)
+  jitter?: boolean;            // Full jitter randomization (default: false)
+  shouldRetry?: (error: unknown, attempt: number) => boolean | Promise<boolean>;
+}
+```
+
 ---
 
 ## 3. Errors
@@ -130,3 +143,28 @@ import {
 - **`AhkoConfigurationError`**: Thrown when invalid options (e.g. invalid concurrency or delay) are supplied.
 - **`AhkoQueueError`**: Thrown when queue constraints are violated.
 - **`AhkoTimeoutError`**: Thrown when a task exceeds its allotted timeout duration.
+
+---
+
+## 4. Utilities
+
+### `calculateBackoff(attempt: number, options?: IRetryOptions, randomFn?: () => number): number`
+
+Pure calculation helper that computes the delay in milliseconds for a failed attempt based on the configured retry policy.
+
+- Exponential backoff formula: $\min(\text{baseDelay} \times 2^{\text{attempt} - 1}, \text{maxDelay})$
+- Linear backoff formula: $\min(\text{baseDelay} \times \text{attempt}, \text{maxDelay})$
+- When `jitter: true`, computes $\lfloor \text{randomFn}() \times (\text{cappedDelay} + 1) \rfloor$ (full jitter).
+
+```typescript
+import { calculateBackoff } from "@mrjacket/ahko";
+
+const delayMs = calculateBackoff(1, {
+  attempts: 3,
+  backoff: "exponential",
+  baseDelay: 200,
+  maxDelay: 5000,
+  jitter: false,
+});
+// 200ms
+```

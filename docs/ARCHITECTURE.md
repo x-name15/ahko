@@ -67,6 +67,11 @@ Cleanup (Listeners, Timers, References)
 - Explicit `key` parameter (string or symbol) determines coalescing identity.
 - Function identity (`fn1 === fn2`) is never used.
 
+### E. Retry & Backoff Slot Safety
+- When a task fails and qualifies for a retry attempt, it releases its active concurrency slot immediately during the backoff delay.
+- This prevents idle waiting from starving other ready tasks in the queue.
+- If the task is aborted during backoff delay sleep, the delay timer is cancelled immediately, the task is rejected with `AhkoCancellationError`, and no subsequent retries are scheduled.
+
 ---
 
 ## 4. Task Lifecycle State Machine
