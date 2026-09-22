@@ -44,11 +44,13 @@ Schedules a task for controlled execution. Preserves the exact return type `T` o
 | `delay` | `number` | `0` | Delay duration in milliseconds (required when strategy is `"delay"`). |
 | `idleTimeout` | `number` | `undefined` | Maximum time in ms to wait for idle opportunity before forcing queue execution. |
 | `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
+| `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
 | `signal` | `AbortSignal` | `undefined` | Optional external abort signal for cooperative cancellation. |
 
 ##### Throws
 - `AhkoConfigurationError`: If `task` is not a function or options are invalid.
 - `AhkoCancellationError`: If the task is aborted before or during execution.
+- `AhkoTimeoutError`: If the task execution exceeds `timeoutMs`.
 
 ---
 
@@ -167,4 +169,24 @@ const delayMs = calculateBackoff(1, {
   jitter: false,
 });
 // 200ms
+```
+
+### `combineSignals(signals: ReadonlyArray<AbortSignal | undefined>): ICombinedSignal`
+
+Combines multiple `AbortSignal` instances into a single coordinated `AbortSignal` with explicit, memory-safe cleanup.
+
+- Returns `{ signal: AbortSignal, cleanup: () => void }`.
+- If any source signal aborts, the combined signal aborts with the same reason.
+- Calling `cleanup()` immediately removes internal event listeners from all source signals, preventing memory leaks and `MaxListenersExceededWarning` alerts.
+
+```typescript
+import { combineSignals } from "@mrjacket/ahko";
+
+const { signal, cleanup } = combineSignals([externalSignal, timeoutSignal]);
+
+try {
+  await doWork({ signal });
+} finally {
+  cleanup();
+}
 ```

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-22 — Timeout & Robust Cancellation
+
+### Added
+- Execution timeout control via `timeoutMs` in `IScheduleOptions`.
+- Rejection with `AhkoTimeoutError` containing exceeded `timeoutMs` threshold and descriptive message.
+- Immediate rejection and slot recovery for hanging, uncooperative tasks via `Promise.race`.
+- Active execution timeout isolation (queued waiting time and backoff delays do not consume execution timeout).
+- Fresh `timeoutMs` window allocation on retry attempts.
+- Unified signal coordination via `combineSignals` utility with deterministic listener detachment.
+- Strict configuration validation for `timeoutMs` (positive finite numbers).
+- Comprehensive unit test suite covering execution timeouts, cancellation precedence, uncooperative tasks, retries, and signal combination.
+
+---
+
 ## [0.3.0] - 2026-09-22 — Retry & Backoff
 
 ### Added

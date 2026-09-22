@@ -1,4 +1,5 @@
 import { AhkoConfigurationError } from "../errors/configuration.error.js";
+import { AhkoTimeoutError } from "../errors/timeout.error.js";
 import type { IScheduleOptions } from "../models/options.model.js";
 import type { IAhkoStats } from "../models/stats.model.js";
 import { ETaskState } from "../models/state.model.js";
@@ -137,6 +138,19 @@ export class TaskQueue {
       ) {
         throw new AhkoConfigurationError(
           `Invalid retry maxDelay "${options.retry.maxDelay}". maxDelay must be a non-negative number in milliseconds.`
+        );
+      }
+    }
+
+    if (options?.timeoutMs !== undefined) {
+      if (
+        typeof options.timeoutMs !== "number" ||
+        Number.isNaN(options.timeoutMs) ||
+        !Number.isFinite(options.timeoutMs) ||
+        options.timeoutMs <= 0
+      ) {
+        throw new AhkoConfigurationError(
+          `Invalid timeoutMs "${options.timeoutMs}". timeoutMs must be a positive finite number greater than 0.`
         );
       }
     }
@@ -319,7 +333,7 @@ export class TaskQueue {
         return;
       }
 
-      if (runner.state === ETaskState.TIMED_OUT) {
+      if (runner.state === ETaskState.TIMED_OUT || error instanceof AhkoTimeoutError) {
         this.timedOutTasks++;
       } else {
         this.failedTasks++;

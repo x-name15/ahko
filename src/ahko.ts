@@ -71,7 +71,7 @@ export class Ahko {
       throw new AhkoConfigurationError("Task must be a valid function.");
     }
 
-    const runner = new TaskRunner<T>(task, options?.signal);
+    const runner = new TaskRunner<T>(task, options?.signal, options?.timeoutMs);
     return this.queue.enqueue(runner, options);
   }
 

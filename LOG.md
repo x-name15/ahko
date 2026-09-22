@@ -31,3 +31,12 @@
   Mathematical delay calculation with cap and full jitter (`[0, baseDelay * factor]`) implemented as pure functional logic with injectable random generator for deterministic testing.
 - **Decision 10: Persistent Cancellation Across Retries**:
   Abort listeners remain attached across retry attempts until final resolution or definitive rejection, ensuring cooperative cancellation can halt execution at any point in the retry cycle.
+
+## 2026-09-22 — Milestone 0.4.0 Architecture Decisions
+
+- **Decision 11: Active Execution Scope for Timeouts**:
+  `timeoutMs` applies strictly to the duration of active execution within a concurrency slot (`ETaskState.RUNNING`). Queue wait times and backoff sleep delays do not count against this deadline. Furthermore, each retry attempt receives a fresh, full `timeoutMs` window.
+- **Decision 12: Deterministic Uncooperative Task Interception**:
+  Execution is coordinated via `Promise.race` against a timeout promise and an abort promise, guaranteeing that uncooperative tasks that hang or ignore signals do not freeze scheduler capacity or delay promise rejection to callers.
+- **Decision 13: Memory-Safe Coordinated Signal Aggregation**:
+  Created `combineSignals()` utility with explicit `cleanup()` callback, guaranteeing that all event listeners attached to external or internal signals are cleanly detached upon task settle to prevent memory leaks in high-throughput environments.

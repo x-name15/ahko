@@ -30,6 +30,14 @@ export interface IScheduleOptions {
   retry?: IRetryOptions;
 
   /**
+   * Maximum execution time in milliseconds allowed per attempt.
+   * If the task does not complete within this duration, execution
+   * is aborted and the task rejects with an AhkoTimeoutError.
+   * Must be a positive finite number greater than 0 if provided.
+   */
+  timeoutMs?: number;
+
+  /**
    * External cancellation signal.
    * If aborted before start, the task is removed from the queue without execution.
    * If aborted while running, the abort event is propagated to the task context signal.

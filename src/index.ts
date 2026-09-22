@@ -8,6 +8,7 @@ export {
   AhkoConfigurationError,
   AhkoQueueError,
   AhkoTimeoutError,
+  type IAhkoTimeoutErrorOptions,
 } from "./errors/index.js";
 
 // Models and interfaces
@@ -34,3 +35,10 @@ export {
   DEFAULT_BASE_DELAY,
   DEFAULT_MAX_DELAY,
 } from "./retry/index.js";
+
+// Signal utilities
+export {
+  combineSignals,
+  type ICombinedSignal,
+} from "./scheduler/signal.js";
+

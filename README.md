@@ -160,7 +160,26 @@ const taskPromise = ahko.schedule(
 controller.abort();
 ```
 
-### 6. Telemetry (`stats`)
+### 6. Execution Deadlines & Timeouts (`timeoutMs`)
+
+Enforce deadlines per attempt. If a task exceeds `timeoutMs`, its context signal is aborted and the task rejects with `AhkoTimeoutError`:
+
+```typescript
+try {
+  await ahko.schedule(
+    async ({ signal }) => {
+      return callLongRunningApi({ signal });
+    },
+    { timeoutMs: 3000 } // aborts and rejects if running longer than 3 seconds
+  );
+} catch (error) {
+  if (error instanceof AhkoTimeoutError) {
+    console.error(`Timed out after ${error.timeoutMs}ms`);
+  }
+}
+```
+
+### 7. Telemetry (`stats`)
 
 Inspect real-time scheduler state without synthetic metrics:
 
@@ -174,7 +193,7 @@ console.log(stats);
 //   completedTasks: 42,
 //   failedTasks: 1,
 //   cancelledTasks: 2,
-//   timedOutTasks: 0,
+//   timedOutTasks: 1,
 //   capacity: 3
 // }
 ```
@@ -214,6 +233,7 @@ Schedules an asynchronous task with full return type inference.
 | `delay` | `number` | `0` | Delay in milliseconds when strategy is `"delay"`. |
 | `idleTimeout` | `number` | `undefined` | Maximum time to wait for idle window before forcing queue entry. |
 | `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
+| `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
 | `signal` | `AbortSignal` | `undefined` | Optional external `AbortSignal` for cooperative cancellation. |
 
 ### `ahko.idle<T>(task: ITask<T>, options?: Omit<IScheduleOptions, "strategy">): Promise<T>`

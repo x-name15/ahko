@@ -141,7 +141,36 @@ controller.abort();
 
 ---
 
-## 5. Next Steps
+## 5. Execution Timeouts (`timeoutMs`)
+
+Enforce strict execution deadlines on tasks. If a task exceeds `timeoutMs`, its context signal is aborted and the promise rejects with `AhkoTimeoutError`:
+
+```typescript
+import { Ahko, AhkoTimeoutError } from "@mrjacket/ahko";
+
+const ahko = new Ahko();
+
+try {
+  await ahko.schedule(
+    async ({ signal }) => {
+      // Long-running operation aborted if it takes longer than 2.5s
+      const response = await fetch("https://api.example.com/slow-export", { signal });
+      return response.blob();
+    },
+    { timeoutMs: 2500 }
+  );
+} catch (error) {
+  if (error instanceof AhkoTimeoutError) {
+    console.error(`Task timed out after ${error.timeoutMs}ms`);
+  }
+}
+```
+
+> **Note:** `timeoutMs` only measures the task's **active execution time** in a concurrency slot. Time waiting in the queue does not count against the timeout, and each retry attempt receives a fresh `timeoutMs` window.
+
+---
+
+## 6. Next Steps
 
 - Explore the complete [Library API Guide](./library.md).
 - Learn about the internal [Architecture & Design](./architecture.md).
