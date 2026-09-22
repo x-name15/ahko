@@ -170,7 +170,48 @@ try {
 
 ---
 
-## 6. Next Steps
+## 6. Debounce & Throttle with Promise Coalescing
+
+### Debounce
+Wait for a quiet period before running. When called repeatedly with the same `key`, the timer resets, and **all callers share the exact same returned Promise**:
+
+```typescript
+// 10 keystrokes typed rapidly in search box -> only 1 API call after 300ms of inactivity
+const searchResults = await ahko.debounce("search_input", async () => {
+  return fetchSearchResults(currentQuery);
+}, 300);
+```
+
+### Throttle
+Ensure an action runs at most once per designated interval. The leading call executes immediately, and calls arriving during the window coalesce into a single trailing run:
+
+```typescript
+// Rapid scroll events -> at most 1 execution every 100ms
+await ahko.throttle("scroll_tracker", async () => {
+  recordScrollPosition(window.scrollY);
+}, 100);
+```
+
+---
+
+## 7. Interval Rate Limiting (`minIntervalMs`)
+
+Prevent burst workloads by pacing task dispatching, ensuring at least `minIntervalMs` elapses between consecutive task starts:
+
+```typescript
+// Concurrency 3, but paced so tasks start at least 50ms apart
+const ahko = new Ahko({ concurrency: 3, minIntervalMs: 50 });
+
+const operations = Array.from({ length: 10 }, (_, i) =>
+  ahko.schedule(async () => callPacedApi(i))
+);
+
+await Promise.all(operations);
+```
+
+---
+
+## 8. Next Steps
 
 - Explore the complete [Library API Guide](./library.md).
 - Learn about the internal [Architecture & Design](./architecture.md).

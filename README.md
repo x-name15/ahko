@@ -179,7 +179,32 @@ try {
 }
 ```
 
-### 7. Telemetry (`stats`)
+### 7. Debounce & Throttle with Promise Coalescing
+
+Coalesce repeated invocations into shared executions by explicit `key`. Callers share the exact same returned Promise:
+
+```typescript
+// Debounce: waits for 300ms of quiet before running
+const results = await ahko.debounce("search_box", async () => {
+  return queryApi(text);
+}, 300);
+
+// Throttle: runs leading edge immediately, coalesces trailing calls
+await ahko.throttle("window_resize", async () => {
+  recalculateLayout();
+}, 100);
+```
+
+### 8. Paced Execution (`minIntervalMs`)
+
+Prevent burst spikes by ensuring a minimum interval elapses between consecutive task starts:
+
+```typescript
+// At most 2 concurrent tasks, paced at least 50ms apart
+const ahko = new Ahko({ concurrency: 2, minIntervalMs: 50 });
+```
+
+### 9. Telemetry (`stats`)
 
 Inspect real-time scheduler state without synthetic metrics:
 
@@ -222,6 +247,7 @@ Creates an AHKO scheduler instance.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `concurrency` | `number` | `Infinity` | Maximum concurrent tasks allowed to run simultaneously. Must be $\ge 1$. |
+| `minIntervalMs` | `number` | `0` | Minimum interval in milliseconds between consecutive task starts. Must be $\ge 0$. |
 
 ### `ahko.schedule<T>(task: ITask<T>, options?: IScheduleOptions): Promise<T>`
 
@@ -229,12 +255,22 @@ Schedules an asynchronous task with full return type inference.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
-| `strategy` | `"immediate" \| "delay" \| "idle"` | `"immediate"` | Scheduling execution strategy. |
+| `strategy` | `"immediate" \| "delay" \| "idle" \| "throttle" \| "debounce"` | `"immediate"` | Scheduling execution strategy. |
 | `delay` | `number` | `0` | Delay in milliseconds when strategy is `"delay"`. |
+| `key` | `string \| symbol` | `undefined` | Explicit identity key for `"debounce"` and `"throttle"`. |
+| `waitMs` | `number` | `undefined` | Window duration in ms for debounce quiet period or throttle interval. |
 | `idleTimeout` | `number` | `undefined` | Maximum time to wait for idle window before forcing queue entry. |
 | `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
 | `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
 | `signal` | `AbortSignal` | `undefined` | Optional external `AbortSignal` for cooperative cancellation. |
+
+### `ahko.debounce<T>(key: string | symbol, task: ITask<T>, waitMs: number, options?: IScheduleOptions): Promise<T>`
+
+Convenience method scheduling a debounced task with key-based Promise coalescing.
+
+### `ahko.throttle<T>(key: string | symbol, task: ITask<T>, waitMs: number, options?: IScheduleOptions): Promise<T>`
+
+Convenience method scheduling a throttled task with leading execution and coalesced trailing run.
 
 ### `ahko.idle<T>(task: ITask<T>, options?: Omit<IScheduleOptions, "strategy">): Promise<T>`
 

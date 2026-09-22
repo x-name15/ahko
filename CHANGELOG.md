@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-22 — Throttle, Debounce & Rate Limiting
+
+### Added
+- Debounce scheduling strategy (`EScheduleStrategy.DEBOUNCE`) with quiet window timer resets.
+- Throttle scheduling strategy (`EScheduleStrategy.THROTTLE`) with immediate leading execution and coalesced trailing run.
+- Promise coalescing by explicit identity key (`key: string | symbol`): all concurrent callers awaiting the same key receive the exact same Promise resolution without artificial cancellation rejections.
+- Task start interval rate limiting via `minIntervalMs` on scheduler constructor (`IAhkoOptions`).
+- Automatic key cleanup and timer detachment upon settlement guaranteeing zero memory leaks.
+- Convenience API methods `ahko.debounce()` and `ahko.throttle()`.
+- Validation for keys, quiet windows, throttle periods, and rate limit intervals.
+- Comprehensive unit test suites for debounce coalescing, throttle leading/trailing runs, and interval rate limiting.
+
+---
+
 ## [0.4.0] - 2026-09-22 — Timeout & Robust Cancellation
 
 ### Added

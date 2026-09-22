@@ -40,3 +40,12 @@
   Execution is coordinated via `Promise.race` against a timeout promise and an abort promise, guaranteeing that uncooperative tasks that hang or ignore signals do not freeze scheduler capacity or delay promise rejection to callers.
 - **Decision 13: Memory-Safe Coordinated Signal Aggregation**:
   Created `combineSignals()` utility with explicit `cleanup()` callback, guaranteeing that all event listeners attached to external or internal signals are cleanly detached upon task settle to prevent memory leaks in high-throughput environments.
+
+## 2026-09-22 — Milestone 0.5.0 Architecture Decisions
+
+- **Decision 14: Shared Execution Coalescing by Explicit Key**:
+  Debounced and throttled tasks require explicit `key: string | symbol`. Callers within active windows return the exact same Promise instance, ensuring that multiple rapid calls gracefully collapse into one execution without throwing artificial cancellation errors.
+- **Decision 15: Clean Lifecycle Map Eviction**:
+  Coordinator tracking entries for `debounce` and `throttle` are strictly deleted from internal Maps immediately upon timer expiration or cancellation, guaranteeing zero memory retention of task closures or settled promises.
+- **Decision 16: Paced Dispatch Rate Limiting (`minIntervalMs`)**:
+  Scheduler pump enforces a minimum temporal spacing (`minIntervalMs`) between consecutive task starts using timer pacing, guaranteeing burst suppression even when concurrency slots are immediately free.

@@ -5,8 +5,10 @@ import type { IAhkoStats } from "../models/stats.model.js";
 import { ETaskState } from "../models/state.model.js";
 import { EScheduleStrategy } from "../models/strategy.model.js";
 import { calculateBackoff } from "../retry/backoff.js";
+import { DebounceCoordinator } from "./debounce-coordinator.js";
 import { IdleScheduler, type IIdleHandle } from "./idle-scheduler.js";
 import { TaskRunner } from "./task-runner.js";
+import { ThrottleCoordinator } from "./throttle-coordinator.js";
 
 /**
  * Entry tracking delayed task timers for deterministic cancellation and memory cleanup.
@@ -40,6 +42,15 @@ export class TaskQueue {
   /** Maximum concurrent active tasks */
   public readonly concurrency: number;
 
+  /** Minimum interval in milliseconds between consecutive task starts */
+  public readonly minIntervalMs: number;
+
+  /** Timestamp of the most recent task start */
+  private lastTaskStartTime = 0;
+
+  /** Active rate limit timer for pacing consecutive tasks */
+  private rateLimitTimer?: ReturnType<typeof setTimeout>;
+
   /** Queue of pending task runners waiting for a concurrency slot */
   private readonly queue: TaskRunner<unknown>[] = [];
 
@@ -54,6 +65,12 @@ export class TaskQueue {
 
   /** Set of tasks currently awaiting a retry backoff timer */
   private readonly retryEntries = new Set<IRetryEntry>();
+
+  /** Coordinator for debounced tasks with key coalescing */
+  public readonly debounceCoordinator = new DebounceCoordinator();
+
+  /** Coordinator for throttled tasks with leading/trailing coalescing */
+  public readonly throttleCoordinator = new ThrottleCoordinator();
 
   /** WeakMap associating task runners with their scheduling options */
   private readonly runnerOptions = new WeakMap<TaskRunner<unknown>, IScheduleOptions>();
@@ -74,15 +91,27 @@ export class TaskQueue {
    * Creates a new TaskQueue.
    *
    * @param concurrency - Maximum concurrent tasks (defaults to Infinity).
-   * @throws {AhkoConfigurationError} If concurrency is less than 1 or not a valid number.
+   * @param minIntervalMs - Minimum interval in milliseconds between task dispatches.
+   * @throws {AhkoConfigurationError} If concurrency is less than 1 or minIntervalMs is invalid.
    */
-  constructor(concurrency = Infinity) {
+  constructor(concurrency = Infinity, minIntervalMs = 0) {
     if (Number.isNaN(concurrency) || concurrency < 1) {
       throw new AhkoConfigurationError(
         `Invalid concurrency "${concurrency}". Must be a number greater than or equal to 1.`
       );
     }
+    if (
+      typeof minIntervalMs !== "number" ||
+      Number.isNaN(minIntervalMs) ||
+      !Number.isFinite(minIntervalMs) ||
+      minIntervalMs < 0
+    ) {
+      throw new AhkoConfigurationError(
+        `Invalid minIntervalMs "${minIntervalMs}". minIntervalMs must be a non-negative finite number.`
+      );
+    }
     this.concurrency = concurrency;
+    this.minIntervalMs = minIntervalMs;
   }
 
   /**
@@ -100,11 +129,27 @@ export class TaskQueue {
     if (
       strategy !== EScheduleStrategy.IMMEDIATE &&
       strategy !== EScheduleStrategy.DELAY &&
-      strategy !== EScheduleStrategy.IDLE
+      strategy !== EScheduleStrategy.IDLE &&
+      strategy !== EScheduleStrategy.THROTTLE &&
+      strategy !== EScheduleStrategy.DEBOUNCE
     ) {
       throw new AhkoConfigurationError(
-        `Unsupported schedule strategy "${String(strategy)}". Supported strategies: "immediate", "delay", "idle".`
+        `Unsupported schedule strategy "${String(strategy)}". Supported strategies: "immediate", "delay", "idle", "throttle", "debounce".`
       );
+    }
+
+    if (strategy === EScheduleStrategy.THROTTLE || strategy === EScheduleStrategy.DEBOUNCE) {
+      if (!options?.key || (typeof options.key !== "string" && typeof options.key !== "symbol")) {
+        throw new AhkoConfigurationError(
+          `Strategy "${strategy}" requires a valid "key" of type string or symbol.`
+        );
+      }
+      const waitMs = options.waitMs ?? options.delay;
+      if (typeof waitMs !== "number" || Number.isNaN(waitMs) || !Number.isFinite(waitMs) || waitMs < 0) {
+        throw new AhkoConfigurationError(
+          `Strategy "${strategy}" requires a non-negative finite "waitMs" or "delay" in milliseconds.`
+        );
+      }
     }
 
     if (options?.retry) {
@@ -284,10 +329,44 @@ export class TaskQueue {
 
   /**
    * Pumps the queue by picking pending tasks and executing them
-   * as long as concurrency capacity is available.
+   * as long as concurrency capacity is available and minIntervalMs is respected.
    */
   private pump(): void {
+    if (this.queue.length === 0 || this.activeRunners.size >= this.concurrency) {
+      return;
+    }
+
+    if (this.minIntervalMs > 0 && this.lastTaskStartTime > 0) {
+      const now = Date.now();
+      const elapsed = now - this.lastTaskStartTime;
+      if (elapsed < this.minIntervalMs) {
+        if (this.rateLimitTimer === undefined) {
+          const delay = this.minIntervalMs - elapsed;
+          this.rateLimitTimer = setTimeout(() => {
+            this.rateLimitTimer = undefined;
+            this.pump();
+          }, delay);
+        }
+        return;
+      }
+    }
+
     while (this.activeRunners.size < this.concurrency && this.queue.length > 0) {
+      if (this.minIntervalMs > 0 && this.lastTaskStartTime > 0) {
+        const now = Date.now();
+        const elapsed = now - this.lastTaskStartTime;
+        if (elapsed < this.minIntervalMs) {
+          if (this.rateLimitTimer === undefined) {
+            const delay = this.minIntervalMs - elapsed;
+            this.rateLimitTimer = setTimeout(() => {
+              this.rateLimitTimer = undefined;
+              this.pump();
+            }, delay);
+          }
+          break;
+        }
+      }
+
       const runner = this.queue.shift();
       if (!runner) {
         break;
@@ -298,9 +377,22 @@ export class TaskQueue {
       }
 
       this.activeRunners.add(runner);
+      this.lastTaskStartTime = Date.now();
 
       // Execute runner without unhandled rejection risk
       void this.executeRunner(runner);
+
+      if (this.minIntervalMs > 0) {
+        if (this.queue.length > 0 && this.activeRunners.size < this.concurrency) {
+          if (this.rateLimitTimer === undefined) {
+            this.rateLimitTimer = setTimeout(() => {
+              this.rateLimitTimer = undefined;
+              this.pump();
+            }, this.minIntervalMs);
+          }
+        }
+        break;
+      }
     }
   }
 
@@ -410,7 +502,9 @@ export class TaskQueue {
         this.queue.length +
         this.delayedEntries.size +
         this.idleEntries.size +
-        this.retryEntries.size,
+        this.retryEntries.size +
+        this.debounceCoordinator.size +
+        this.throttleCoordinator.size,
       completedTasks: this.completedTasks,
       failedTasks: this.failedTasks,
       cancelledTasks: this.cancelledTasks,

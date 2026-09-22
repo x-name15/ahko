@@ -40,7 +40,7 @@ export class Ahko {
    * ```
    */
   constructor(options?: IAhkoOptions) {
-    this.queue = new TaskQueue(options?.concurrency);
+    this.queue = new TaskQueue(options?.concurrency, options?.minIntervalMs);
   }
 
   /**
@@ -53,6 +53,7 @@ export class Ahko {
    *
    * @throws {AhkoConfigurationError} If the task is not a function or options are invalid.
    * @throws {AhkoCancellationError} If the task is cancelled prior to or during execution.
+   * @throws {AhkoTimeoutError} If task execution exceeds timeoutMs.
    *
    * @example
    * ```typescript
@@ -69,6 +70,50 @@ export class Ahko {
   public schedule<T>(task: ITask<T>, options?: IScheduleOptions): Promise<T> {
     if (typeof task !== "function") {
       throw new AhkoConfigurationError("Task must be a valid function.");
+    }
+
+    const strategy = options?.strategy ?? EScheduleStrategy.IMMEDIATE;
+
+    if (strategy === EScheduleStrategy.DEBOUNCE) {
+      if (!options?.key || (typeof options.key !== "string" && typeof options.key !== "symbol")) {
+        throw new AhkoConfigurationError(
+          `Strategy "debounce" requires a valid "key" of type string or symbol.`
+        );
+      }
+      const waitMs = options.waitMs ?? options.delay;
+      if (typeof waitMs !== "number" || Number.isNaN(waitMs) || !Number.isFinite(waitMs) || waitMs < 0) {
+        throw new AhkoConfigurationError(
+          `Strategy "debounce" requires a non-negative finite "waitMs" or "delay" in milliseconds.`
+        );
+      }
+      return this.queue.debounceCoordinator.schedule(
+        options.key,
+        task,
+        waitMs,
+        options,
+        (t, opts) => this.schedule(t, { ...opts, strategy: EScheduleStrategy.IMMEDIATE })
+      );
+    }
+
+    if (strategy === EScheduleStrategy.THROTTLE) {
+      if (!options?.key || (typeof options.key !== "string" && typeof options.key !== "symbol")) {
+        throw new AhkoConfigurationError(
+          `Strategy "throttle" requires a valid "key" of type string or symbol.`
+        );
+      }
+      const waitMs = options.waitMs ?? options.delay;
+      if (typeof waitMs !== "number" || Number.isNaN(waitMs) || !Number.isFinite(waitMs) || waitMs < 0) {
+        throw new AhkoConfigurationError(
+          `Strategy "throttle" requires a non-negative finite "waitMs" or "delay" in milliseconds.`
+        );
+      }
+      return this.queue.throttleCoordinator.schedule(
+        options.key,
+        task,
+        waitMs,
+        options,
+        (t, opts) => this.schedule(t, { ...opts, strategy: EScheduleStrategy.IMMEDIATE })
+      );
     }
 
     const runner = new TaskRunner<T>(task, options?.signal, options?.timeoutMs);
@@ -90,13 +135,6 @@ export class Ahko {
    *
    * @throws {AhkoConfigurationError} If the task is not a function or options are invalid.
    * @throws {AhkoCancellationError} If the task is cancelled prior to or during execution.
-   *
-   * @example
-   * ```typescript
-   * const result = await ahko.idle(async ({ signal }) => {
-   *   return computeAnalytics();
-   * });
-   * ```
    */
   public idle<T>(
     task: ITask<T>,
@@ -105,6 +143,54 @@ export class Ahko {
     return this.schedule(task, {
       ...options,
       strategy: EScheduleStrategy.IDLE,
+    });
+  }
+
+  /**
+   * Convenience method to schedule a debounced task with key-based Promise coalescing.
+   *
+   * @template T - Inferred return type of the task.
+   * @param key - Explicit identity key.
+   * @param task - Work to execute once calls stop arriving.
+   * @param waitMs - Quiet window duration in milliseconds.
+   * @param options - Additional schedule options.
+   * @returns Shared promise resolving with the final execution outcome.
+   */
+  public debounce<T>(
+    key: string | symbol,
+    task: ITask<T>,
+    waitMs: number,
+    options?: Omit<IScheduleOptions, "strategy" | "key" | "waitMs">
+  ): Promise<T> {
+    return this.schedule(task, {
+      ...options,
+      strategy: EScheduleStrategy.DEBOUNCE,
+      key,
+      waitMs,
+    });
+  }
+
+  /**
+   * Convenience method to schedule a throttled task with leading execution and coalesced trailing run.
+   *
+   * @template T - Inferred return type of the task.
+   * @param key - Explicit identity key.
+   * @param task - Work to execute.
+   * @param waitMs - Throttle interval duration in milliseconds.
+   * @param options - Additional schedule options.
+   * @returns Promise resolving with the leading or coalesced trailing result.
+   */
+  public throttle<T>(
+    key: string | symbol,
+    task: ITask<T>,
+    waitMs: number,
+    options?: Omit<IScheduleOptions, "strategy" | "key" | "waitMs">
+  ): Promise<T> {
+    return this.schedule(task, {
+      ...options,
+      strategy: EScheduleStrategy.THROTTLE,
+      key,
+      waitMs,
     });
   }
 

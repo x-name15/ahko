@@ -38,6 +38,18 @@ export interface IScheduleOptions {
   timeoutMs?: number;
 
   /**
+   * Explicit identity key for "debounce" and "throttle" strategies.
+   * Tasks sharing the same key coalesce into shared executions.
+   */
+  key?: string | symbol;
+
+  /**
+   * Duration in milliseconds for debounce quiet window or throttle period.
+   * If omitted, falls back to `delay` if specified.
+   */
+  waitMs?: number;
+
+  /**
    * External cancellation signal.
    * If aborted before start, the task is removed from the queue without execution.
    * If aborted while running, the abort event is propagated to the task context signal.
@@ -55,4 +67,12 @@ export interface IAhkoOptions {
    * @default Infinity
    */
   concurrency?: number;
+
+  /**
+   * Minimum interval in milliseconds that must elapse between consecutive task starts.
+   * Paces task execution to prevent burst workloads even when concurrency slots are free.
+   * Must be a non-negative finite number if provided.
+   * @default 0
+   */
+  minIntervalMs?: number;
 }

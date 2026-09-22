@@ -22,6 +22,7 @@ new Ahko(options?: IAhkoOptions): Ahko
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `concurrency` | `number` | `Infinity` | Maximum concurrent active tasks allowed to run simultaneously. Must be $\ge 1$. |
+| `minIntervalMs` | `number` | `0` | Minimum interval in milliseconds between consecutive task starts (rate limiting). Must be $\ge 0$. |
 
 ---
 
@@ -40,8 +41,10 @@ Schedules a task for controlled execution. Preserves the exact return type `T` o
 ##### `IScheduleOptions`
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `strategy` | `EScheduleStrategy \| "immediate" \| "delay" \| "idle"` | `"immediate"` | Scheduling strategy. |
+| `strategy` | `EScheduleStrategy \| "immediate" \| "delay" \| "idle" \| "throttle" \| "debounce"` | `"immediate"` | Scheduling strategy. |
 | `delay` | `number` | `0` | Delay duration in milliseconds (required when strategy is `"delay"`). |
+| `key` | `string \| symbol` | `undefined` | Explicit identity key (required when strategy is `"throttle"` or `"debounce"`). |
+| `waitMs` | `number` | `undefined` | Time window in milliseconds for debounce quiet window or throttle interval. |
 | `idleTimeout` | `number` | `undefined` | Maximum time in ms to wait for idle opportunity before forcing queue execution. |
 | `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
 | `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
@@ -63,6 +66,22 @@ Convenience method that schedules a task using `strategy: "idle"`.
 
 ---
 
+#### `ahko.debounce<T>(key: string | symbol, task: ITask<T>, waitMs: number, options?: IScheduleOptions): Promise<T>`
+
+Convenience method scheduling a debounced task with Promise coalescing by explicit identity key.
+- Resets the quiet window timer if called again with the same `key` within `waitMs`.
+- Multiple callers awaiting the same `key` share the exact same returned Promise.
+
+---
+
+#### `ahko.throttle<T>(key: string | symbol, task: ITask<T>, waitMs: number, options?: IScheduleOptions): Promise<T>`
+
+Convenience method scheduling a throttled task with leading execution and coalesced trailing run.
+- The first invocation on an idle `key` runs immediately (leading edge).
+- Subsequent calls within `waitMs` coalesce into a single trailing run dispatched when the window timer expires.
+
+---
+
 #### `ahko.stats(): IAhkoStats`
 
 Returns an immutable snapshot of current scheduler telemetry.
@@ -71,7 +90,7 @@ Returns an immutable snapshot of current scheduler telemetry.
 | Metric | Type | Description |
 |---|---|---|
 | `activeTasks` | `number` | Tasks currently executing in a concurrency slot. |
-| `pendingTasks` | `number` | Tasks waiting in queue or in delay timer. |
+| `pendingTasks` | `number` | Tasks waiting in queue, delay timers, idle handles, backoffs, or debounce/throttle windows. |
 | `completedTasks` | `number` | Cumulative count of successful task runs. |
 | `failedTasks` | `number` | Cumulative count of failed task runs. |
 | `cancelledTasks` | `number` | Cumulative count of cancelled task runs. |
@@ -109,6 +128,8 @@ enum EScheduleStrategy {
   IMMEDIATE = "immediate",
   DELAY = "delay",
   IDLE = "idle",
+  THROTTLE = "throttle",
+  DEBOUNCE = "debounce",
 }
 ```
 
