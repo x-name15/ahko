@@ -40,13 +40,23 @@ Schedules a task for controlled execution. Preserves the exact return type `T` o
 ##### `IScheduleOptions`
 | Property | Type | Default | Description |
 |---|---|---|---|
-| `strategy` | `EScheduleStrategy \| "immediate" \| "delay"` | `"immediate"` | Scheduling strategy. |
+| `strategy` | `EScheduleStrategy \| "immediate" \| "delay" \| "idle"` | `"immediate"` | Scheduling strategy. |
 | `delay` | `number` | `0` | Delay duration in milliseconds (required when strategy is `"delay"`). |
+| `idleTimeout` | `number` | `undefined` | Maximum time in ms to wait for idle opportunity before forcing queue execution. |
 | `signal` | `AbortSignal` | `undefined` | Optional external abort signal for cooperative cancellation. |
 
 ##### Throws
 - `AhkoConfigurationError`: If `task` is not a function or options are invalid.
 - `AhkoCancellationError`: If the task is aborted before or during execution.
+
+---
+
+#### `ahko.idle<T>(task: ITask<T>, options?: Omit<IScheduleOptions, "strategy">): Promise<T>`
+
+Convenience method that schedules a task using `strategy: "idle"`.
+- Uses `requestIdleCallback` in browser environments when present.
+- Uses `setImmediate` in Node.js environments.
+- Falls back to `setTimeout(..., 0)` if neither is available.
 
 ---
 
@@ -95,6 +105,7 @@ enum ETaskState {
 enum EScheduleStrategy {
   IMMEDIATE = "immediate",
   DELAY = "delay",
+  IDLE = "idle",
 }
 ```
 

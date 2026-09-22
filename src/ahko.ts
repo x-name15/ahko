@@ -1,12 +1,13 @@
 import { AhkoConfigurationError } from "./errors/configuration.error.js";
 import type { IAhkoOptions, IScheduleOptions } from "./models/options.model.js";
 import type { IAhkoStats } from "./models/stats.model.js";
+import { EScheduleStrategy } from "./models/strategy.model.js";
 import type { ITask } from "./models/task.model.js";
 import { TaskQueue } from "./scheduler/task-queue.js";
 import { TaskRunner } from "./scheduler/task-runner.js";
 
 /**
- * Ahko — Low-energy, production-grade asynchronous task scheduler.
+ * Ahko — Low-energy asynchronous task scheduler.
  *
  * Coordinates execution timing, enforces concurrency limits, and cooperates
  * natively with AbortSignal cancellation.
@@ -72,6 +73,39 @@ export class Ahko {
 
     const runner = new TaskRunner<T>(task, options?.signal);
     return this.queue.enqueue(runner, options);
+  }
+
+  /**
+   * Convenience method to schedule a task during platform idle opportunities.
+   *
+   * Equivalent to calling `schedule(task, { ...options, strategy: "idle" })`.
+   * In browsers, uses `requestIdleCallback` when available.
+   * In Node.js, uses `setImmediate`.
+   * Falls back to `setTimeout(..., 0)` if neither is available.
+   *
+   * @template T - Inferred return type of the task.
+   * @param task - Task function to run when idle.
+   * @param options - Scheduling options (excluding strategy).
+   * @returns A promise resolving to the task's return value.
+   *
+   * @throws {AhkoConfigurationError} If the task is not a function or options are invalid.
+   * @throws {AhkoCancellationError} If the task is cancelled prior to or during execution.
+   *
+   * @example
+   * ```typescript
+   * const result = await ahko.idle(async ({ signal }) => {
+   *   return computeAnalytics();
+   * });
+   * ```
+   */
+  public idle<T>(
+    task: ITask<T>,
+    options?: Omit<IScheduleOptions, "strategy">
+  ): Promise<T> {
+    return this.schedule(task, {
+      ...options,
+      strategy: EScheduleStrategy.IDLE,
+    });
   }
 
   /**

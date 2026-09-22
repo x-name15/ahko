@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-09-22 — Idle Scheduling
+
+### Added
+- Platform-agnostic `IdleScheduler` supporting browser `requestIdleCallback`, Node.js `setImmediate`, and universal fallback `setTimeout(..., 0)`.
+- Support for `idle` strategy (`EScheduleStrategy.IDLE`).
+- Optional `idleTimeout` parameter in `IScheduleOptions` forwarding to `requestIdleCallback({ timeout })`.
+- Convenience method `ahko.idle(task, options)`.
+- Immediate resource cleanup and handle cancellation when idle tasks are cancelled prior to callback execution.
+- Comprehensive unit test suite covering cross-runtime execution, fallback paths, cancellation, and concurrency.
+
+---
+
 ## [0.1.0] - 2026-09-22 — Core Scheduler
 
 ### Added

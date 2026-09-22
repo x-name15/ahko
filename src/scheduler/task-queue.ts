@@ -3,6 +3,7 @@ import type { IScheduleOptions } from "../models/options.model.js";
 import type { IAhkoStats } from "../models/stats.model.js";
 import { ETaskState } from "../models/state.model.js";
 import { EScheduleStrategy } from "../models/strategy.model.js";
+import { IdleScheduler, type IIdleHandle } from "./idle-scheduler.js";
 import { TaskRunner } from "./task-runner.js";
 
 /**
@@ -11,6 +12,14 @@ import { TaskRunner } from "./task-runner.js";
 interface IDelayedEntry {
   runner: TaskRunner<unknown>;
   timerId: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * Entry tracking idle callback handles for deterministic cancellation and cleanup.
+ */
+interface IIdleEntry {
+  runner: TaskRunner<unknown>;
+  handle: IIdleHandle;
 }
 
 /**
@@ -29,6 +38,9 @@ export class TaskQueue {
 
   /** Set of tasks currently in delay phase */
   private readonly delayedEntries = new Set<IDelayedEntry>();
+
+  /** Set of tasks currently awaiting an idle opportunity */
+  private readonly idleEntries = new Set<IIdleEntry>();
 
   /** Cumulative completed tasks counter */
   private completedTasks = 0;
@@ -69,9 +81,13 @@ export class TaskQueue {
   public enqueue<T>(runner: TaskRunner<T>, options?: IScheduleOptions): Promise<T> {
     const strategy = options?.strategy ?? EScheduleStrategy.IMMEDIATE;
 
-    if (strategy !== EScheduleStrategy.IMMEDIATE && strategy !== EScheduleStrategy.DELAY) {
+    if (
+      strategy !== EScheduleStrategy.IMMEDIATE &&
+      strategy !== EScheduleStrategy.DELAY &&
+      strategy !== EScheduleStrategy.IDLE
+    ) {
       throw new AhkoConfigurationError(
-        `Unsupported schedule strategy "${String(strategy)}". Supported strategies in 0.1.0: "immediate", "delay".`
+        `Unsupported schedule strategy "${String(strategy)}". Supported strategies: "immediate", "delay", "idle".`
       );
     }
 
@@ -89,6 +105,22 @@ export class TaskQueue {
       }
 
       this.scheduleDelayed(runner as TaskRunner<unknown>, delayMs);
+      return runner.promise;
+    }
+
+    if (strategy === EScheduleStrategy.IDLE) {
+      if (
+        options?.idleTimeout !== undefined &&
+        (typeof options.idleTimeout !== "number" ||
+          Number.isNaN(options.idleTimeout) ||
+          options.idleTimeout < 0)
+      ) {
+        throw new AhkoConfigurationError(
+          `Invalid idleTimeout "${options.idleTimeout}". idleTimeout must be a non-negative number in milliseconds.`
+        );
+      }
+
+      this.scheduleIdle(runner as TaskRunner<unknown>, options?.idleTimeout);
       return runner.promise;
     }
 
@@ -140,6 +172,43 @@ export class TaskQueue {
       if (this.delayedEntries.has(delayedEntry)) {
         clearTimeout(delayedEntry.timerId);
         this.delayedEntries.delete(delayedEntry);
+        this.cancelledTasks++;
+      }
+    };
+  }
+
+  /**
+   * Schedules a task to be placed into the queue during an idle opportunity,
+   * handling early cancellation safely.
+   */
+  private scheduleIdle(runner: TaskRunner<unknown>, idleTimeout?: number): void {
+    let idleEntry!: IIdleEntry;
+
+    const handle = IdleScheduler.schedule(() => {
+      this.idleEntries.delete(idleEntry);
+      if (runner.state === ETaskState.CANCELLED) {
+        return;
+      }
+
+      runner.onCancel = () => {
+        const index = this.queue.indexOf(runner);
+        if (index !== -1) {
+          this.queue.splice(index, 1);
+          this.cancelledTasks++;
+        }
+      };
+
+      this.queue.push(runner);
+      this.pump();
+    }, idleTimeout);
+
+    idleEntry = { runner, handle };
+    this.idleEntries.add(idleEntry);
+
+    runner.onCancel = () => {
+      if (this.idleEntries.has(idleEntry)) {
+        handle.cancel();
+        this.idleEntries.delete(idleEntry);
         this.cancelledTasks++;
       }
     };
@@ -200,7 +269,7 @@ export class TaskQueue {
   public getStats(): IAhkoStats {
     return Object.freeze({
       activeTasks: this.activeRunners.size,
-      pendingTasks: this.queue.length + this.delayedEntries.size,
+      pendingTasks: this.queue.length + this.delayedEntries.size + this.idleEntries.size,
       completedTasks: this.completedTasks,
       failedTasks: this.failedTasks,
       cancelledTasks: this.cancelledTasks,

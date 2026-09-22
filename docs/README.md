@@ -1,6 +1,6 @@
 # ahko — Documentation
 
-**`@mrjacket/ahko`** is a low-energy, production-grade asynchronous task scheduler for JavaScript and TypeScript.
+**`@mrjacket/ahko`** is a low-energy asynchronous task scheduler for JavaScript and TypeScript.
 
 Inspired by Aashii Kedarui / Ahko from *"The 100 Girlfriends Who Really, Really, Really, Really, Really Love You"*, AHKO brings calm, controlled execution to asynchronous workflows without rush, bursts, or unnecessary complexity.
 

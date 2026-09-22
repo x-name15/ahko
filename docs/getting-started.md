@@ -76,6 +76,24 @@ await ahko.schedule(
 );
 ```
 
+### Opportunistic Idle Execution
+Run background tasks when the platform has available idle capacity (using `requestIdleCallback` in browsers, `setImmediate` in Node.js, or `setTimeout(..., 0)`):
+
+```typescript
+// Via strategy
+await ahko.schedule(
+  async ({ signal }) => {
+    await sendNonCriticalTelemetry({ signal });
+  },
+  { strategy: "idle", idleTimeout: 5000 }
+);
+
+// Or via the idle() convenience method
+await ahko.idle(async ({ signal }) => {
+  await indexCachedRecords({ signal });
+});
+```
+
 ---
 
 ## 4. Cancellation with `AbortSignal`

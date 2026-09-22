@@ -6,9 +6,11 @@ export enum EScheduleStrategy {
   IMMEDIATE = "immediate",
   /** Delay execution for a designated duration before queuing */
   DELAY = "delay",
+  /** Execute during platform idle opportunities (requestIdleCallback in browser, setImmediate in Node.js) */
+  IDLE = "idle",
 }
 
 /**
  * Union type representing valid scheduling strategy identifiers.
  */
-export type TScheduleStrategy = EScheduleStrategy | "immediate" | "delay";
+export type TScheduleStrategy = EScheduleStrategy | "immediate" | "delay" | "idle";

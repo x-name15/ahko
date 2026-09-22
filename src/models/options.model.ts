@@ -17,6 +17,13 @@ export interface IScheduleOptions {
   delay?: number;
 
   /**
+   * Maximum time in milliseconds to wait for an idle opportunity before
+   * forcing execution into the queue. Applicable when strategy is "idle".
+   * Forwards to requestIdleCallback({ timeout }) when running in browser runtimes.
+   */
+  idleTimeout?: number;
+
+  /**
    * External cancellation signal.
    * If aborted before start, the task is removed from the queue without execution.
    * If aborted while running, the abort event is propagated to the task context signal.
