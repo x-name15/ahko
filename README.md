@@ -1,4 +1,4 @@
-# @mrjacket/ahko
+<h1><img src=".github/images/ahko.png" width="80" height="80"> ahko</h1>
 
 [![npm version](https://img.shields.io/npm/v/@mrjacket/ahko.svg?color=success)](https://www.npmjs.com/package/@mrjacket/ahko)
 [![npm downloads](https://img.shields.io/npm/dm/@mrjacket/ahko.svg)](https://www.npmjs.com/package/@mrjacket/ahko)

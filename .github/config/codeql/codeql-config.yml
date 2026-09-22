@@ -1,0 +1,5 @@
+name: "ahko CodeQL Configuration"
+
+query-filters:
+  - exclude:
+      id: js/file-access-to-http
