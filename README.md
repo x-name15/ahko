@@ -13,9 +13,6 @@
     <img src="https://img.shields.io/npm/v/@mrjacket/ahko.svg?color=success" alt="npm version">
   </a>
   <a href="https://www.npmjs.com/package/@mrjacket/ahko">
-    <img src="https://img.shields.io/npm/dm/@mrjacket/ahko.svg" alt="npm downloads">
-  </a>
-  <a href="https://www.npmjs.com/package/@mrjacket/ahko">
     <img src="https://img.shields.io/node/v/@mrjacket/ahko.svg" alt="node">
   </a>
   <a href="https://github.com/x-name15/ahko/actions/workflows/ci.yml">
@@ -29,12 +26,6 @@
   </a>
   <a href="https://www.npmjs.com/package/@mrjacket/ahko">
     <img src="https://img.shields.io/badge/dependencies-0-success" alt="zero dependencies">
-  </a>
-  <a href="https://bundlephobia.com/package/@mrjacket/ahko">
-    <img src="https://img.shields.io/bundlephobia/minzip/@mrjacket/ahko?color=purple" alt="bundle size">
-  </a>
-  <a href="https://github.com/x-name15/ahko">
-    <img src="https://img.shields.io/badge/TypeScript-Ready-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
   </a>
   <a href="https://github.com/x-name15/ahko/issues">
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
