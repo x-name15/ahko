@@ -25,6 +25,9 @@ interface IDebounceEntry<T = unknown> {
 export class DebounceCoordinator {
   private readonly entries = new Map<string | symbol, IDebounceEntry<unknown>>();
 
+  /** Optional callback invoked whenever entries are settled or removed from coordinator */
+  public onSettled?: () => void;
+
   /**
    * Schedules a task under the debounce strategy.
    *
@@ -139,6 +142,7 @@ export class DebounceCoordinator {
     }
 
     this.entries.delete(key);
+    this.onSettled?.();
     if (entry.options?.signal && entry.abortListener) {
       entry.options.signal.removeEventListener("abort", entry.abortListener);
     }
@@ -165,6 +169,7 @@ export class DebounceCoordinator {
 
     clearTimeout(entry.timerId);
     this.entries.delete(key);
+    this.onSettled?.();
 
     if (entry.options?.signal && entry.abortListener) {
       entry.options.signal.removeEventListener("abort", entry.abortListener);
@@ -196,5 +201,6 @@ export class DebounceCoordinator {
       entry.reject(new AhkoCancellationError("Debounced tasks cleared"));
     }
     this.entries.clear();
+    this.onSettled?.();
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@mrjacket/ahko",
-  "version": "0.6.0",
+  "version": "1.0.0",
   "description": "A low-energy task scheduler for JavaScript and TypeScript. Let your code chill.",
   "type": "module",
   "main": "dist/index.cjs",
@@ -25,6 +25,8 @@
     "build:types": "tsc --declaration --emitDeclarationOnly --outDir dist",
     "prepublishOnly": "npm run build && npm test",
     "test": "vitest run",
+    "test:e2e": "vitest run src/__tests__/e2e.test.ts",
+    "test:examples": "node scripts/run-examples.mjs",
     "test:package": "node scripts/package-smoke-test.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"

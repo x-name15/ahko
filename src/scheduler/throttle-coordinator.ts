@@ -27,6 +27,9 @@ interface IThrottleEntry<T = unknown> {
 export class ThrottleCoordinator {
   private readonly entries = new Map<string | symbol, IThrottleEntry<unknown>>();
 
+  /** Optional callback invoked whenever entries are settled or removed from coordinator */
+  public onSettled?: () => void;
+
   /**
    * Schedules a task under the throttle strategy.
    *
@@ -143,6 +146,7 @@ export class ThrottleCoordinator {
 
     // No trailing task arrived during the window: settle and delete key
     this.entries.delete(key);
+    this.onSettled?.();
   }
 
   /**
@@ -161,6 +165,7 @@ export class ThrottleCoordinator {
       clearTimeout(entry.windowTimerId);
     }
     this.entries.delete(key);
+    this.onSettled?.();
 
     if (entry.trailingReject) {
       const cancelError = new AhkoCancellationError(
@@ -191,5 +196,6 @@ export class ThrottleCoordinator {
       }
     }
     this.entries.clear();
+    this.onSettled?.();
   }
 }

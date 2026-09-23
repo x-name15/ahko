@@ -5,6 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.0] - 2026-09-23 — Stable Scheduler Release
+
+### Added
+- Comprehensive End-to-End stress and integration test suite (`src/__tests__/e2e.test.ts`) verifying:
+  - High-concurrency bursts under rate-limited temporal pacing (`minIntervalMs`) and jittered backoff retries.
+  - Interleaved interactive debounce and throttle streams under queue contention.
+  - Cooperative cancellation waves simulating document switches or build cancellations (VS Code / CLI scenarios).
+  - Graceful shutdown workflows clearing pending queues while allowing in-flight tasks to settle cleanly (`ahko.chill()`).
+  - Full lifecycle telemetry stream validation and microservice uncooperative timeout handling.
+- Standalone runnable examples suite (`examples/`) with dedicated `examples/README.md`:
+  - `01-concurrency-and-pacing.mjs`: concurrency limits and temporal pacing.
+  - `02-debounce-search.mjs`: debounced interactive search with Promise coalescing.
+  - `03-throttle-events.mjs`: high-frequency event stream throttling.
+  - `04-retry-backoff-jitter.mjs`: resilient retries with exponential backoff and full jitter.
+  - `05-idle-telemetry.mjs`: non-blocking background tasks and lifecycle event logging.
+  - `06-graceful-shutdown.mjs`: safe process termination sequence.
+- Dedicated npm script `"test:e2e"` for focused integration testing.
+- Documentation restructuring into domain guides (`docs/guides/`) and specifications (`docs/architecture/`), including production architectural recipes (`recipes.md`).
+
+### Changed
+- Connected `DebounceCoordinator` and `ThrottleCoordinator` settlement lifecycles directly to `TaskQueue.checkIdle()`, ensuring that window expirations and coordinator deletions deterministically resolve idle promises and emit `"idle"` events.
+- Transitioned version to stable 1.0.0 baseline with frozen zero-dependency architecture.
+
+---
+
 ## [0.6.0] - 2026-09-23 — Telemetry & DX
 
 ### Added

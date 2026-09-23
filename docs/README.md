@@ -23,6 +23,8 @@ docs/
     └── LOG.md                    <-- Engineering decision logs (ADRs)
 ```
 
+> **Runnable Examples:** A comprehensive suite of standalone, runnable Node.js scripts is available in the [`examples/`](../examples/) folder. See [`examples/README.md`](../examples/README.md) for details.
+
 ---
 
 ## Guides

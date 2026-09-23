@@ -72,3 +72,15 @@
   Implemented `isIdle()`, `onIdle()`, mascot battery status `battery()`, and the chill alias `chill() = onIdle()`.
 - **Decision 21: Remediation of CodeQL Map Key Iteration Alerts**:
   Fixed CodeQL alert by iterating over map values (`this.entries.values()`) in `DebounceCoordinator.clear()` and `ThrottleCoordinator.clear()`.
+
+---
+
+## 2026-09-23 — Milestone 1.0.0 Architecture Decisions
+
+- **Decision 22: Deterministic Idle State via Coordinator Settlement**:
+  Connected `DebounceCoordinator` and `ThrottleCoordinator` settlement hooks directly to `TaskQueue.checkIdle()`. When throttle or debounce windows expire with no trailing work, or when keys are cancelled or cleared, the scheduler immediately evaluates idle state, ensuring promises returned by `onIdle()` and `chill()` resolve deterministically without lag.
+- **Decision 23: Production Hardening Across Environments (CLI, CI/CD, VS Code Extensions)**:
+  Verified through the comprehensive E2E test suite that the scheduler core operates reliably under simultaneous concurrency caps, temporal pacing, uncooperative hanging tasks, and mass cooperative cancellation waves, making it directly embeddable into CLI batch tools, CI/CD runners, and interactive VS Code extension background services.
+- **Decision 24: Standalone Executable Runnable Examples**:
+  Created `examples/` directory with 6 zero-setup Node.js scripts demonstrating concurrency control, debounced search, throttled events, retry policies with jitter, idle execution, and graceful application termination.
+

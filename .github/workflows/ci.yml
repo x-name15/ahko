@@ -34,3 +34,6 @@ jobs:
 
     - name: Test packed npm package
       run: npm run test:package
+
+    - name: Run Examples Suite
+      run: npm run test:examples

@@ -125,6 +125,8 @@ export class TaskQueue {
     }
     this.concurrency = concurrency;
     this.minIntervalMs = minIntervalMs;
+    this.debounceCoordinator.onSettled = () => this.checkIdle();
+    this.throttleCoordinator.onSettled = () => this.checkIdle();
   }
 
   /**

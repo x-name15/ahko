@@ -297,13 +297,15 @@ Comprehensive guides and technical documentation are available in the [`docs/`](
 | [**Roadmap**](./docs/architecture/ROADMAP.md) | Milestone progression from 0.1.0 through 1.0.0. |
 | [**Engineering Log**](./docs/architecture/LOG.md) | Chronological log of engineering decisions and ADRs. |
 
+> **Runnable Examples:** A comprehensive suite of standalone, runnable Node.js scripts is available in the [`examples/`](./examples/) folder. See [`examples/README.md`](./examples/README.md) for details.
+
 ---
 
 ## API Reference
 
 ### `new Ahko(options?: IAhkoOptions)`
 
-Creates an AHKO scheduler instance.
+Creates an ahko scheduler instance.
 
 | Option | Type | Default | Description |
 |---|---|---|---|
