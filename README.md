@@ -27,6 +27,18 @@
   <a href="https://github.com/x-name15/ahko/blob/main/LICENSE">
     <img src="https://img.shields.io/npm/l/@mrjacket/ahko.svg" alt="license">
   </a>
+  <a href="https://www.npmjs.com/package/@mrjacket/ahko">
+    <img src="https://img.shields.io/badge/dependencies-0-success" alt="zero dependencies">
+  </a>
+  <a href="https://bundlephobia.com/package/@mrjacket/ahko">
+    <img src="https://img.shields.io/bundlephobia/minzip/@mrjacket/ahko?color=purple" alt="bundle size">
+  </a>
+  <a href="https://github.com/x-name15/ahko">
+    <img src="https://img.shields.io/badge/TypeScript-Ready-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
+  </a>
+  <a href="https://github.com/x-name15/ahko/issues">
+    <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
+  </a>
 </p>
 
 `ahko` is a low-energy task scheduler for JavaScript and TypeScript.
@@ -219,8 +231,63 @@ console.log(stats);
 //   failedTasks: 1,
 //   cancelledTasks: 2,
 //   timedOutTasks: 1,
+//   retriedTasks: 3,
+//   totalDispatched: 45,
 //   capacity: 3
 // }
+```
+
+### 10. Lifecycle Events (`on` / `off`)
+
+Listen to typed lifecycle events with isolated callback safety:
+
+```typescript
+const unsubscribe = ahko.on("task:start", ({ taskId, attempt }) => {
+  console.log(`Task ${taskId} started attempt #${attempt}`);
+});
+
+ahko.on("task:complete", ({ taskId, durationMs, result }) => {
+  console.log(`Task ${taskId} completed in ${durationMs}ms:`, result);
+});
+
+ahko.on("task:fail", ({ taskId, attempt, error, willRetry }) => {
+  console.warn(`Task ${taskId} attempt #${attempt} failed (willRetry: ${willRetry})`, error);
+});
+
+ahko.on("task:timeout", ({ taskId, timeoutMs }) => {
+  console.warn(`Task ${taskId} exceeded ${timeoutMs}ms deadline`);
+});
+
+ahko.on("task:cancel", ({ taskId, reason }) => {
+  console.info(`Task ${taskId} was cancelled:`, reason);
+});
+
+ahko.on("idle", ({ timestamp }) => {
+  console.log("Scheduler transitioned to idle at", timestamp);
+});
+```
+
+### 11. Idle & Chill Developer Experience
+
+Wait for all work to settle or clear the queue cleanly:
+
+```typescript
+// Wait for all active and pending tasks to finish
+await ahko.onIdle();
+// Or use the completely chill alias:
+await ahko.chill();
+
+// Check if scheduler is currently idle
+if (ahko.isIdle()) {
+  console.log("Completely chill. No tasks running or queued.");
+}
+
+// Clear all queued, delayed, and coalesced tasks
+ahko.clear();
+
+// Check Ahko mascot battery telemetry
+console.log(ahko.battery());
+// { level: 3, chill: true, status: "low-energy", quote: "Mwee... my battery is low, but all your tasks are handled completely chill." }
 ```
 
 ---
@@ -231,10 +298,13 @@ Comprehensive guides and technical documentation are available in the [`docs/`](
 
 | Document | Description |
 |---|---|
-| [**Getting Started**](./docs/getting-started.md) | Quickstart guide, installation, and fundamental usage patterns. |
-| [**Library API**](./docs/library.md) | Complete programmatic API reference, TypeScript interfaces, and options. |
-| [**Architecture**](./docs/architecture.md) | Architectural specifications, lifecycle state machine, and design decisions. |
-| [**Roadmap**](./docs/roadmap.md) | Milestone progression from 0.1.0 through 1.0.0. |
+| [**Documentation Portal**](./docs/README.md) | Master overview and index of all guides and specifications. |
+| [**Getting Started**](./docs/guides/getting-started.md) | Quickstart guide, installation, and fundamental usage patterns. |
+| [**Library API**](./docs/guides/library.md) | Complete programmatic API reference, TypeScript interfaces, and options. |
+| [**Production Recipes**](./docs/guides/recipes.md) | Battle-tested recipes (paced API client, debounced search, throttled scroll, graceful shutdown). |
+| [**Architecture**](./docs/architecture/ARCHITECTURE.md) | Architectural specifications, lifecycle state machine, and design decisions. |
+| [**Roadmap**](./docs/architecture/ROADMAP.md) | Milestone progression from 0.1.0 through 1.0.0. |
+| [**Engineering Log**](./docs/architecture/LOG.md) | Chronological log of engineering decisions and ADRs. |
 
 ---
 
@@ -276,9 +346,37 @@ Convenience method scheduling a throttled task with leading execution and coales
 
 Convenience method scheduling a task under `strategy: "idle"`.
 
+### `ahko.on(event, handler)`
+
+Subscribes to scheduler lifecycle events (`task:start`, `task:complete`, `task:fail`, `task:cancel`, `task:timeout`, `idle`). Returns an unsubscribe function.
+
+### `ahko.off(event, handler)`
+
+Unsubscribes an event listener callback.
+
+### `ahko.isIdle(): boolean`
+
+Returns whether the scheduler is currently idle (no active or pending tasks).
+
+### `ahko.onIdle(): Promise<void>`
+
+Returns a Promise that resolves when all active and pending tasks have settled.
+
+### `ahko.chill(): Promise<void>`
+
+Alias for `ahko.onIdle()`.
+
+### `ahko.clear(): void`
+
+Cancels all pending, delayed, and throttled/debounced tasks cleanly.
+
+### `ahko.battery()`
+
+Returns mascot battery status and quote.
+
 ### `ahko.stats(): IAhkoStats`
 
-Returns a snapshot of current task counters and queue capacity.
+Returns a snapshot of current task counters, retry counts, total dispatches, and queue capacity.
 
 ---
 

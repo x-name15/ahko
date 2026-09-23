@@ -1,4 +1,4 @@
-# Getting Started with @mrjacket/ahko
+# Getting Started with ahko
 
 `@mrjacket/ahko` is a low-energy task scheduler for JavaScript and TypeScript designed to control when asynchronous operations run, prevent bursty workload spikes, and manage concurrency.
 
@@ -24,9 +24,11 @@ AHKO solves a very simple problem:
 
 Instead of firing dozens or hundreds of asynchronous tasks simultaneously (e.g. hitting an API, querying a database, or reading files), AHKO passes them through a controlled scheduler queue with:
 - Strict concurrency limits
-- Explicit scheduling strategies (`immediate`, `delay`)
+- Explicit scheduling strategies (`immediate`, `delay`, `idle`, `throttle`, `debounce`)
 - First-class cooperative cancellation via `AbortSignal`
-- Accurate real-time telemetry
+- Robust execution deadlines (`timeoutMs`)
+- Automatic retries with exponential backoff & jitter
+- Real-time telemetry and lifecycle events (`on`, `off`)
 
 ---
 
@@ -211,7 +213,50 @@ await Promise.all(operations);
 
 ---
 
-## 8. Next Steps
+## 8. Lifecycle Events & Telemetry
 
-- Explore the complete [Library API Guide](./library.md).
-- Learn about the internal [Architecture & Design](./architecture.md).
+Subscribe to scheduler events with safe listener error containment:
+
+```typescript
+ahko.on("task:start", ({ taskId, attempt }) => {
+  console.log(`Task ${taskId} attempt #${attempt} started`);
+});
+
+ahko.on("task:complete", ({ taskId, durationMs }) => {
+  console.log(`Task ${taskId} succeeded in ${durationMs}ms`);
+});
+
+ahko.on("task:fail", ({ taskId, attempt, willRetry, error }) => {
+  console.warn(`Task ${taskId} failed (willRetry: ${willRetry}):`, error);
+});
+
+ahko.on("idle", () => {
+  console.log("Scheduler is completely chill and idle.");
+});
+```
+
+---
+
+## 9. Developer Experience (DX)
+
+```typescript
+// Wait for all active and pending tasks to finish
+await ahko.onIdle();
+// Or use the completely chill mascot alias:
+await ahko.chill();
+
+// Clear remaining queued and delayed tasks
+ahko.clear();
+
+// Check mascot battery status
+console.log(ahko.battery());
+```
+
+---
+
+## 10. Next Steps
+
+- Explore the complete [Library API Reference](./library.md).
+- Browse production patterns in [Production Recipes & Architectural Patterns](./recipes.md).
+- Learn about the internal [Architecture & Design Specifications](../architecture/ARCHITECTURE.md).
+- Track version progression in the [Milestone Roadmap](../architecture/ROADMAP.md).

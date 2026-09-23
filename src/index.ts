@@ -27,6 +27,10 @@ export type {
   IRetryOptions,
   TRetryBackoff,
   TRetryPredicate,
+  IAhkoEventMap,
+  TAhkoEventName,
+  TAhkoEventHandler,
+  TAhkoUnsubscribe,
 } from "./models/index.js";
 
 // Retry utilities

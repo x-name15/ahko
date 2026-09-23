@@ -2,24 +2,48 @@
 
 **`@mrjacket/ahko`** is a low-energy asynchronous task scheduler for JavaScript and TypeScript.
 
-Inspired by Aashii Kedarui / Ahko from *"The 100 Girlfriends Who Really, Really, Really, Really, Really Love You"*, @mrjacket/ahko brings calm, controlled execution to asynchronous workflows without rush, bursts, or unnecessary complexity.
+*Let your code chill.*
+
+---
+
+## Documentation Structure
+
+```
+docs/
+├── README.md                     <-- Master portal (you are here)
+│
+├── guides/                       <-- Practical Developer Guides
+│   ├── getting-started.md        <-- Installation, quickstart & mental model
+│   ├── library.md                <-- Programmatic API reference (methods, types, errors, events)
+│   └── recipes.md                <-- Production recipes & architectural patterns
+│
+└── architecture/                 <-- Architectural Specifications & Design Decisions
+    ├── ARCHITECTURE.md           <-- Core scope, design principles & lifecycle state machine
+    ├── ROADMAP.md                <-- Version progression & milestones (0.1.0 to 1.0.0)
+    └── LOG.md                    <-- Engineering decision logs (ADRs)
+```
 
 ---
 
 ## Guides
 
-| Document | Audience | What it covers |
-|----------|----------|----------------|
-| [Getting Started](./getting-started.md) | Everyone | Installation, basic setup, concurrency control, and quickstart examples. |
-| [Library API](./library.md) | Developers | Comprehensive programmatic API reference, options, errors, and TypeScript models. |
-| [Architecture](./architecture.md) | Engineers | Core concepts, single-scheduler design, confirmed decisions, and lifecycle states. |
-| [Roadmap](./roadmap.md) | Everyone | Versioned milestones (0.1.0 through 1.0.0) and roadmap status. |
+| Guide | Target Audience | Summary |
+|---|---|---|
+| [Getting Started](./guides/getting-started.md) | Everyone | Installation, 5-minute quickstart, concurrency control, and fundamental concepts. |
+| [Library API](./guides/library.md) | Developers | Complete API reference for `Ahko`, strategies, options, error classes, and events. |
+| [Production Recipes & Patterns](./guides/recipes.md) | Engineers | Battle-tested recipes: paced API client, debounced search, throttled scroll, idle analytics, graceful shutdown. |
 
 ---
 
-## Engineering Log
+## Architecture & Specifications
 
-See [LOG.md](../LOG.md) for architectural decision records.
+| Document | Focus Area | Summary |
+|---|---|---|
+| [Architecture Specification](./architecture/ARCHITECTURE.md) | Architectural Foundation | Single-scheduler philosophy, native platform primitives, memory safety, and lifecycle state machine. |
+| [Roadmap](./architecture/ROADMAP.md) | Version Progression | Progression from 0.1.0 through 1.0.0 stable release. |
+| [Engineering Decisions Log](./architecture/LOG.md) | Design History | Chronological log of engineering decisions, trade-offs, and security remediations. |
+
+---
 
 ## Contributing
 

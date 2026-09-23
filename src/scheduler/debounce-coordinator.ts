@@ -188,7 +188,7 @@ export class DebounceCoordinator {
    * Cancels all pending debounced entries and clears the map.
    */
   public clear(): void {
-    for (const [key, entry] of this.entries) {
+    for (const entry of this.entries.values()) {
       clearTimeout(entry.timerId);
       if (entry.options?.signal && entry.abortListener) {
         entry.options.signal.removeEventListener("abort", entry.abortListener);

@@ -13,14 +13,14 @@ The library controls **when** asynchronous work executes, **how much** work runs
 ## 2. Core Architectural Principles
 
 ### 2.1 Single Unified Scheduler Core
-All strategies (`immediate`, `delay`, and future strategies like `idle`, `throttle`, `debounce`, and `retry`) compose on **one single scheduler engine** and converge on a single task lifecycle. There are no separate disconnected scheduling engines.
+All strategies (`immediate`, `delay`, `idle`, `throttle`, `debounce`, and `retry`) compose on **one single scheduler engine** and converge on a single task lifecycle. There are no separate disconnected scheduling engines.
 
 ```text
 Task
   ↓
 Scheduler (TaskRunner + TaskQueue)
   ↓
-Strategy / Policy (Immediate, Delay, ...)
+Strategy / Policy (Immediate, Delay, Idle, Throttle, Debounce)
   ↓
 Execution & AbortSignal Propagation
   ↓
@@ -45,15 +45,15 @@ Cleanup (Listeners, Timers, References)
 
 ## 3. Confirmed Architectural Decisions
 
-### A. Debounce: Promise Coalescing / Shared Execution
-- Scheduling multiple tasks with the same `key` within the debounce window coalesces into one execution.
+### A. Debounce & Throttle: Promise Coalescing / Shared Execution
+- Scheduling multiple tasks with the same `key` within active windows coalesces into one execution.
 - All callers awaiting that `key` share the exact same returned Promise (resolving or rejecting with the outcome of that execution).
 - Superseded calls are **not** rejected with `AhkoCancellationError`; they are gracefully coalesced.
 
 ### B. Memory Safety Guarantees
-- Every listener, timer, queue entry, and debounce entry must have explicit cleanup.
+- Every listener, timer, queue entry, and coordinator entry has explicit cleanup.
 - Abort event listeners registered on user-supplied `AbortSignal` instances are removed immediately once a task settles (`COMPLETED`, `FAILED`, `CANCELLED`, or `TIMED_OUT`).
-- Debounce tracking tables delete settled keys immediately.
+- Debounce and throttle tracking tables delete settled keys immediately upon window expiration or settlement.
 - No task closures or settled promises are retained in memory.
 
 ### C. Idle Scheduling Abstraction (`IdleScheduler`)
@@ -63,14 +63,18 @@ Cleanup (Listeners, Timers, References)
   - Fallback: `setTimeout(..., 0)`.
 - Never assume browser globals in Node.js or Node-specific globals in browsers.
 
-### D. Debounce Identity
-- Explicit `key` parameter (string or symbol) determines coalescing identity.
+### D. Identity Keys
+- Explicit `key` parameter (string or symbol) determines coalescing identity for debounce and throttle.
 - Function identity (`fn1 === fn2`) is never used.
 
 ### E. Retry & Backoff Slot Safety
 - When a task fails and qualifies for a retry attempt, it releases its active concurrency slot immediately during the backoff delay.
 - This prevents idle waiting from starving other ready tasks in the queue.
 - If the task is aborted during backoff delay sleep, the delay timer is cancelled immediately, the task is rejected with `AhkoCancellationError`, and no subsequent retries are scheduled.
+
+### F. Isolated Event Telemetry
+- Event hooks (`task:start`, `task:complete`, `task:fail`, `task:cancel`, `task:timeout`, `idle`) run in individual `try/catch` boundaries.
+- Errors thrown by subscriber callbacks are safely contained and never crash the scheduler loop or sibling listeners.
 
 ---
 

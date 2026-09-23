@@ -182,7 +182,7 @@ export class ThrottleCoordinator {
    * Clears all throttled entries and timers.
    */
   public clear(): void {
-    for (const [key, entry] of this.entries) {
+    for (const entry of this.entries.values()) {
       if (entry.windowTimerId !== undefined) {
         clearTimeout(entry.windowTimerId);
       }

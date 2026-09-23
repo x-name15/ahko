@@ -82,6 +82,55 @@ Convenience method scheduling a throttled task with leading execution and coales
 
 ---
 
+#### `ahko.on<K>(event: K, handler: (payload: IAhkoEventMap[K]) => void): () => void`
+
+Subscribes to scheduler lifecycle events. Returns an unsubscribe function.
+Supported events:
+- `"task:start"`: `{ taskId: string, attempt: number }`
+- `"task:complete"`: `{ taskId: string, attempt: number, durationMs: number, result: unknown }`
+- `"task:fail"`: `{ taskId: string, attempt: number, error: unknown, willRetry: boolean }`
+- `"task:cancel"`: `{ taskId: string, reason: unknown }`
+- `"task:timeout"`: `{ taskId: string, timeoutMs: number }`
+- `"idle"`: `{ timestamp: number }`
+
+---
+
+#### `ahko.off<K>(event: K, handler: (payload: IAhkoEventMap[K]) => void): void`
+
+Unsubscribes a specific listener callback from an event.
+
+---
+
+#### `ahko.isIdle(): boolean`
+
+Returns `true` if the scheduler currently has no running and no pending tasks; `false` otherwise.
+
+---
+
+#### `ahko.onIdle(): Promise<void>`
+
+Returns a Promise that resolves when all active, queued, delayed, and throttled/debounced tasks settle and the scheduler transitions to idle.
+
+---
+
+#### `ahko.chill(): Promise<void>`
+
+Delightful alias for `ahko.onIdle()`. Wait for tasks to finish in complete tranquility.
+
+---
+
+#### `ahko.clear(): void`
+
+Cancels all pending, delayed, and coalesced tasks cleanly. In-flight running tasks continue to completion or abort via signal.
+
+---
+
+#### `ahko.battery(): { level: number, chill: boolean, status: string, quote: string }`
+
+Returns Ahko's low-energy mascot telemetry.
+
+---
+
 #### `ahko.stats(): IAhkoStats`
 
 Returns an immutable snapshot of current scheduler telemetry.
@@ -95,6 +144,8 @@ Returns an immutable snapshot of current scheduler telemetry.
 | `failedTasks` | `number` | Cumulative count of failed task runs. |
 | `cancelledTasks` | `number` | Cumulative count of cancelled task runs. |
 | `timedOutTasks` | `number` | Cumulative count of timed out task runs. |
+| `retriedTasks` | `number` | Cumulative count of retry attempts triggered. |
+| `totalDispatched` | `number` | Cumulative count of tasks dispatched to concurrency slots. |
 | `capacity` | `number` | Configured concurrency capacity. |
 
 ---
@@ -142,6 +193,18 @@ interface IRetryOptions {
   maxDelay?: number;           // Maximum delay cap in ms (default: 10000)
   jitter?: boolean;            // Full jitter randomization (default: false)
   shouldRetry?: (error: unknown, attempt: number) => boolean | Promise<boolean>;
+}
+```
+
+### `IAhkoEventMap`
+```typescript
+interface IAhkoEventMap {
+  "task:start": { taskId: string; attempt: number };
+  "task:complete": { taskId: string; attempt: number; durationMs: number; result: unknown };
+  "task:fail": { taskId: string; attempt: number; error: unknown; willRetry: boolean };
+  "task:cancel": { taskId: string; reason: unknown };
+  "task:timeout": { taskId: string; timeoutMs: number };
+  "idle": { timestamp: number };
 }
 ```
 

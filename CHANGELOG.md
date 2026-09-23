@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-23 — Telemetry & DX
+
+### Added
+- Type-safe lifecycle event emitter (`AhkoEventEmitter`) with dedicated `IAhkoEventMap` events:
+  - `task:start`: emitted when a task begins execution with `taskId` and `attempt`.
+  - `task:complete`: emitted on task success with `taskId`, `attempt`, `durationMs`, and `result`.
+  - `task:fail`: emitted on failure with `taskId`, `attempt`, `error`, and `willRetry` boolean indicator.
+  - `task:cancel`: emitted on task cancellation with `taskId` and `reason`.
+  - `task:timeout`: emitted when execution exceeds configured deadline with `taskId` and `timeoutMs`.
+  - `idle`: emitted when all tasks settle and queue reaches idle state with `timestamp`.
+- Event subscription methods `ahko.on(event, handler)` returning an unsubscribe function, and `ahko.off(event, handler)`.
+- Listener error containment: listener exceptions are safely isolated without crashing the scheduler loop or sibling listeners.
+- Idle lifecycle promises via `ahko.isIdle()`, `ahko.onIdle()`, and chill alias `ahko.chill()`.
+- Queue clearance method `ahko.clear()` to cancel queued, delayed, and coalesced tasks cleanly.
+- Ahko mascot battery telemetry via `ahko.battery()` reporting chill status.
+- Extended telemetry snapshot in `ahko.stats()` with `retriedTasks` and `totalDispatched`.
+
+### Fixed
+- Fixed 2 CodeQL security alerts by iterating over map values (`this.entries.values()`) in `DebounceCoordinator.clear()` and `ThrottleCoordinator.clear()`.
+
+---
+
 ## [0.5.0] - 2026-09-22 — Throttle, Debounce & Rate Limiting
 
 ### Added

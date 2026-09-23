@@ -1,4 +1,5 @@
 import { AhkoConfigurationError } from "./errors/configuration.error.js";
+import type { TAhkoEventName, TAhkoEventHandler, TAhkoUnsubscribe } from "./models/events.model.js";
 import type { IAhkoOptions, IScheduleOptions } from "./models/options.model.js";
 import type { IAhkoStats } from "./models/stats.model.js";
 import { EScheduleStrategy } from "./models/strategy.model.js";
@@ -207,5 +208,89 @@ export class Ahko {
    */
   public stats(): IAhkoStats {
     return this.queue.getStats();
+  }
+
+  /**
+   * Subscribes to a scheduler lifecycle event.
+   *
+   * @param event - Event name to listen for.
+   * @param handler - Callback function invoked when the event is emitted.
+   * @returns Unsubscribe function to remove the listener.
+   *
+   * @example
+   * ```typescript
+   * const unsubscribe = ahko.on("task:start", ({ taskId, attempt }) => {
+   *   console.log(`Task ${taskId} started attempt ${attempt}`);
+   * });
+   * ```
+   */
+  public on<K extends TAhkoEventName>(event: K, handler: TAhkoEventHandler<K>): TAhkoUnsubscribe {
+    return this.queue.emitter.on(event, handler);
+  }
+
+  /**
+   * Unsubscribes an event listener from a scheduler lifecycle event.
+   *
+   * @param event - Event name.
+   * @param handler - The exact listener callback to remove.
+   */
+  public off<K extends TAhkoEventName>(event: K, handler: TAhkoEventHandler<K>): void {
+    this.queue.emitter.off(event, handler);
+  }
+
+  /**
+   * Checks whether the scheduler is currently idle (no active runners and no pending tasks).
+   *
+   * @returns True if completely idle, false otherwise.
+   */
+  public isIdle(): boolean {
+    return this.queue.isIdle();
+  }
+
+  /**
+   * Returns a promise that resolves once the scheduler has completed all tasks and is idle.
+   *
+   * @returns Promise resolving when the scheduler is idle.
+   *
+   * @example
+   * ```typescript
+   * ahko.schedule(doWork);
+   * await ahko.onIdle();
+   * console.log("All work finished!");
+   * ```
+   */
+  public onIdle(): Promise<void> {
+    return this.queue.onIdle();
+  }
+
+  /**
+   * Clears all pending, delayed, and throttled/debounced tasks from the scheduler.
+   * In-flight active tasks will continue executing to completion or abort via signal.
+   */
+  public clear(): void {
+    this.queue.clear();
+  }
+
+  /**
+   * Returns the delightful Ahko mascot battery telemetry status.
+   *
+   * Low energy, completely chill.
+   */
+  public battery(): { level: number; chill: boolean; status: string; quote: string } {
+    return {
+      level: 3,
+      chill: true,
+      status: "low-energy",
+      quote: "Mwee... my battery is low, but all your tasks are handled completely chill.",
+    };
+  }
+
+  /**
+   * Delightful alias for `onIdle()`: wait for all tasks to settle chill and relaxed.
+   *
+   * @returns Promise resolving when all tasks have finished.
+   */
+  public chill(): Promise<void> {
+    return this.onIdle();
   }
 }

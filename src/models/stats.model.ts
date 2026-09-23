@@ -20,6 +20,12 @@ export interface IAhkoStats {
   /** Cumulative count of timed out tasks */
   timedOutTasks: number;
 
+  /** Cumulative count of retry attempts triggered */
+  retriedTasks: number;
+
+  /** Cumulative count of tasks dispatched to concurrency slots */
+  totalDispatched: number;
+
   /** Maximum concurrent execution capacity */
   capacity: number;
 }

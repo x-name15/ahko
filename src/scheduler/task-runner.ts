@@ -53,6 +53,9 @@ export class TaskRunner<T> {
   /** Current execution attempt count (1-indexed) */
   public attempt = 1;
 
+  /** Duration of the most recent execution attempt in milliseconds */
+  public lastDurationMs = 0;
+
   /**
    * Creates a new TaskRunner instance.
    *
@@ -231,9 +234,12 @@ export class TaskRunner<T> {
       racePromises.push(timeoutPromise);
     }
 
+    const startTime = Date.now();
+
     try {
       const result = await Promise.race(racePromises);
       this.clearTimeoutTimer();
+      this.lastDurationMs = Math.max(0, Date.now() - startTime);
       if (abortListener) {
         this.abortController.signal.removeEventListener("abort", abortListener);
       }
@@ -253,6 +259,7 @@ export class TaskRunner<T> {
       return result;
     } catch (error) {
       this.clearTimeoutTimer();
+      this.lastDurationMs = Math.max(0, Date.now() - startTime);
       if (abortListener) {
         this.abortController.signal.removeEventListener("abort", abortListener);
       }

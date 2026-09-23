@@ -9,6 +9,7 @@ import { DebounceCoordinator } from "./debounce-coordinator.js";
 import { IdleScheduler, type IIdleHandle } from "./idle-scheduler.js";
 import { TaskRunner } from "./task-runner.js";
 import { ThrottleCoordinator } from "./throttle-coordinator.js";
+import { AhkoEventEmitter } from "../events/event-emitter.js";
 
 /**
  * Entry tracking delayed task timers for deterministic cancellation and memory cleanup.
@@ -72,6 +73,12 @@ export class TaskQueue {
   /** Coordinator for throttled tasks with leading/trailing coalescing */
   public readonly throttleCoordinator = new ThrottleCoordinator();
 
+  /** Lifecycle event emitter for task and scheduler events */
+  public readonly emitter = new AhkoEventEmitter();
+
+  /** Set of pending resolvers awaiting scheduler idle transition */
+  private readonly idleResolvers = new Set<() => void>();
+
   /** WeakMap associating task runners with their scheduling options */
   private readonly runnerOptions = new WeakMap<TaskRunner<unknown>, IScheduleOptions>();
 
@@ -86,6 +93,12 @@ export class TaskQueue {
 
   /** Cumulative timed out tasks counter */
   private timedOutTasks = 0;
+
+  /** Cumulative count of retry attempts triggered */
+  private retriedTasks = 0;
+
+  /** Cumulative count of tasks dispatched to concurrency slots */
+  private totalDispatched = 0;
 
   /**
    * Creates a new TaskQueue.
@@ -243,6 +256,11 @@ export class TaskQueue {
       if (index !== -1) {
         this.queue.splice(index, 1);
         this.cancelledTasks++;
+        this.emitter.emit("task:cancel", {
+          taskId: runner.taskId,
+          reason: "Task cancelled while queued",
+        });
+        this.checkIdle();
       }
     };
 
@@ -271,6 +289,11 @@ export class TaskQueue {
           if (index !== -1) {
             this.queue.splice(index, 1);
             this.cancelledTasks++;
+            this.emitter.emit("task:cancel", {
+              taskId: runner.taskId,
+              reason: "Task cancelled while queued",
+            });
+            this.checkIdle();
           }
         };
 
@@ -286,6 +309,11 @@ export class TaskQueue {
         clearTimeout(delayedEntry.timerId);
         this.delayedEntries.delete(delayedEntry);
         this.cancelledTasks++;
+        this.emitter.emit("task:cancel", {
+          taskId: runner.taskId,
+          reason: "Task cancelled while waiting in delay",
+        });
+        this.checkIdle();
       }
     };
   }
@@ -308,6 +336,11 @@ export class TaskQueue {
         if (index !== -1) {
           this.queue.splice(index, 1);
           this.cancelledTasks++;
+          this.emitter.emit("task:cancel", {
+            taskId: runner.taskId,
+            reason: "Task cancelled while queued",
+          });
+          this.checkIdle();
         }
       };
 
@@ -323,6 +356,11 @@ export class TaskQueue {
         handle.cancel();
         this.idleEntries.delete(idleEntry);
         this.cancelledTasks++;
+        this.emitter.emit("task:cancel", {
+          taskId: runner.taskId,
+          reason: "Task cancelled while waiting for idle",
+        });
+        this.checkIdle();
       }
     };
   }
@@ -402,39 +440,73 @@ export class TaskQueue {
   private async executeRunner(runner: TaskRunner<unknown>): Promise<void> {
     const options = this.runnerOptions.get(runner);
 
+    this.totalDispatched++;
+    this.emitter.emit("task:start", {
+      taskId: runner.taskId,
+      attempt: runner.attempt,
+    });
+
     try {
       const result = await runner.run();
       this.completedTasks++;
       this.activeRunners.delete(runner);
       this.runnerOptions.delete(runner);
+      this.emitter.emit("task:complete", {
+        taskId: runner.taskId,
+        attempt: runner.attempt,
+        durationMs: runner.lastDurationMs,
+        result,
+      });
       runner.resolve(result);
     } catch (error) {
       if (runner.state === ETaskState.CANCELLED) {
         this.cancelledTasks++;
         this.activeRunners.delete(runner);
         this.runnerOptions.delete(runner);
+        this.emitter.emit("task:cancel", {
+          taskId: runner.taskId,
+          reason: error,
+        });
         runner.reject(error);
         return;
       }
 
       const shouldRetry = await runner.canRetry(error, options?.retry);
       if (shouldRetry) {
+        this.retriedTasks++;
         // Free concurrency slot immediately during backoff
         this.activeRunners.delete(runner);
+        this.emitter.emit("task:fail", {
+          taskId: runner.taskId,
+          attempt: runner.attempt - 1,
+          error,
+          willRetry: true,
+        });
         this.scheduleRetry(runner, options);
         return;
       }
 
       if (runner.state === ETaskState.TIMED_OUT || error instanceof AhkoTimeoutError) {
         this.timedOutTasks++;
+        this.emitter.emit("task:timeout", {
+          taskId: runner.taskId,
+          timeoutMs: runner.timeoutMs,
+        });
       } else {
         this.failedTasks++;
       }
       this.activeRunners.delete(runner);
       this.runnerOptions.delete(runner);
+      this.emitter.emit("task:fail", {
+        taskId: runner.taskId,
+        attempt: runner.attempt,
+        error,
+        willRetry: false,
+      });
       runner.reject(error);
     } finally {
       this.pump();
+      this.checkIdle();
     }
   }
 
@@ -451,6 +523,11 @@ export class TaskQueue {
         if (index !== -1) {
           this.queue.splice(index, 1);
           this.cancelledTasks++;
+          this.emitter.emit("task:cancel", {
+            taskId: runner.taskId,
+            reason: "Task cancelled while queued",
+          });
+          this.checkIdle();
         }
       };
       this.queue.push(runner);
@@ -471,6 +548,11 @@ export class TaskQueue {
           if (index !== -1) {
             this.queue.splice(index, 1);
             this.cancelledTasks++;
+            this.emitter.emit("task:cancel", {
+              taskId: runner.taskId,
+              reason: "Task cancelled while queued",
+            });
+            this.checkIdle();
           }
         };
 
@@ -486,8 +568,108 @@ export class TaskQueue {
         clearTimeout(retryEntry.timerId);
         this.retryEntries.delete(retryEntry);
         this.cancelledTasks++;
+        this.emitter.emit("task:cancel", {
+          taskId: runner.taskId,
+          reason: "Task cancelled during retry backoff",
+        });
+        this.checkIdle();
       }
     };
+  }
+
+  /**
+   * Checks whether the scheduler has transitioned to idle and notifies listeners/resolvers.
+   */
+  public checkIdle(): void {
+    if (this.isIdle()) {
+      if (this.idleResolvers.size > 0) {
+        for (const resolve of this.idleResolvers) {
+          resolve();
+        }
+        this.idleResolvers.clear();
+      }
+      this.emitter.emit("idle", { timestamp: Date.now() });
+    }
+  }
+
+  /**
+   * Checks whether the scheduler is currently idle (no active runners and no pending tasks).
+   *
+   * @returns True if completely idle, false otherwise.
+   */
+  public isIdle(): boolean {
+    return (
+      this.activeRunners.size === 0 &&
+      this.queue.length === 0 &&
+      this.delayedEntries.size === 0 &&
+      this.idleEntries.size === 0 &&
+      this.retryEntries.size === 0 &&
+      this.debounceCoordinator.size === 0 &&
+      this.throttleCoordinator.size === 0
+    );
+  }
+
+  /**
+   * Returns a promise that resolves once the scheduler has processed all tasks and is idle.
+   *
+   * @returns Promise resolving when idle.
+   */
+  public onIdle(): Promise<void> {
+    if (this.isIdle()) {
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      this.idleResolvers.add(resolve);
+    });
+  }
+
+  /**
+   * Clears all pending and waiting tasks from the scheduler, cancelling their runners.
+   * Active tasks currently in flight will continue to run to completion or abort via signal.
+   */
+  public clear(): void {
+    while (this.queue.length > 0) {
+      const runner = this.queue.shift();
+      if (runner && runner.state !== ETaskState.CANCELLED) {
+        runner.cancel("Scheduler cleared");
+        this.cancelledTasks++;
+        this.emitter.emit("task:cancel", { taskId: runner.taskId, reason: "Scheduler cleared" });
+      }
+    }
+
+    for (const entry of this.delayedEntries.values()) {
+      clearTimeout(entry.timerId);
+      entry.runner.cancel("Scheduler cleared");
+      this.cancelledTasks++;
+      this.emitter.emit("task:cancel", { taskId: entry.runner.taskId, reason: "Scheduler cleared" });
+    }
+    this.delayedEntries.clear();
+
+    for (const entry of this.idleEntries.values()) {
+      entry.handle.cancel();
+      entry.runner.cancel("Scheduler cleared");
+      this.cancelledTasks++;
+      this.emitter.emit("task:cancel", { taskId: entry.runner.taskId, reason: "Scheduler cleared" });
+    }
+    this.idleEntries.clear();
+
+    for (const entry of this.retryEntries.values()) {
+      clearTimeout(entry.timerId);
+      entry.runner.cancel("Scheduler cleared");
+      this.cancelledTasks++;
+      this.emitter.emit("task:cancel", { taskId: entry.runner.taskId, reason: "Scheduler cleared" });
+    }
+    this.retryEntries.clear();
+
+    this.debounceCoordinator.clear();
+    this.throttleCoordinator.clear();
+
+    if (this.rateLimitTimer !== undefined) {
+      clearTimeout(this.rateLimitTimer);
+      this.rateLimitTimer = undefined;
+    }
+
+    this.checkIdle();
   }
 
   /**
@@ -509,6 +691,8 @@ export class TaskQueue {
       failedTasks: this.failedTasks,
       cancelledTasks: this.cancelledTasks,
       timedOutTasks: this.timedOutTasks,
+      retriedTasks: this.retriedTasks,
+      totalDispatched: this.totalDispatched,
       capacity: this.concurrency,
     });
   }
