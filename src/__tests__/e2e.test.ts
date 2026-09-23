@@ -331,7 +331,6 @@ describe("Milestone 1.0.0 — Comprehensive End-to-End (E2E) Stress Suite", () =
   describe("Scenario 6: Microservice Gateway with Dual Signals & Uncooperative Timeout", () => {
     it("should coordinate external cancellation and internal execution deadline with clean slot liberation", async () => {
       const ahko = new Ahko({ concurrency: 1 });
-      const externalController = new AbortController();
 
       // First task hangs uncooperatively (ignores signal and does not resolve)
       const hangingTask = ahko.schedule(

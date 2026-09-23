@@ -23,6 +23,8 @@ new Ahko(options?: IAhkoOptions): Ahko
 |---|---|---|---|
 | `concurrency` | `number` | `Infinity` | Maximum concurrent active tasks allowed to run simultaneously. Must be $\ge 1$. |
 | `minIntervalMs` | `number` | `0` | Minimum interval in milliseconds between consecutive task starts (rate limiting). Must be $\ge 0$. |
+| `circuitBreaker` | `ICircuitBreakerOptions` | `undefined` | Optional circuit breaker failure threshold and cooldown reset configuration. |
+| `profile` | `string` | `undefined` | Optional declarative profile name to inherit configuration from. |
 
 ---
 
@@ -42,18 +44,21 @@ Schedules a task for controlled execution. Preserves the exact return type `T` o
 | Property | Type | Default | Description |
 |---|---|---|---|
 | `strategy` | `EScheduleStrategy \| "immediate" \| "delay" \| "idle" \| "throttle" \| "debounce"` | `"immediate"` | Scheduling strategy. |
+| `priority` | `TTaskPriority` | `"normal"` | Priority weight (`"high"`, `"normal"`, `"low"`, or custom numeric weight). |
 | `delay` | `number` | `0` | Delay duration in milliseconds (required when strategy is `"delay"`). |
 | `key` | `string \| symbol` | `undefined` | Explicit identity key (required when strategy is `"throttle"` or `"debounce"`). |
 | `waitMs` | `number` | `undefined` | Time window in milliseconds for debounce quiet window or throttle interval. |
 | `idleTimeout` | `number` | `undefined` | Maximum time in ms to wait for idle opportunity before forcing queue execution. |
 | `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
 | `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
+| `totalTimeoutMs` | `number` | `undefined` | Total execution budget across queue wait time, retries, and execution before aborting with `AhkoTimeoutError`. |
 | `signal` | `AbortSignal` | `undefined` | Optional external abort signal for cooperative cancellation. |
 
 ##### Throws
 - `AhkoConfigurationError`: If `task` is not a function or options are invalid.
 - `AhkoCancellationError`: If the task is aborted before or during execution.
-- `AhkoTimeoutError`: If the task execution exceeds `timeoutMs`.
+- `AhkoTimeoutError`: If the task execution exceeds `timeoutMs` or `totalTimeoutMs`.
+- `AhkoCircuitBreakerOpenError`: If the circuit breaker is OPEN and rejects the task.
 
 ---
 
@@ -119,6 +124,36 @@ Delightful alias for `ahko.onIdle()`. Wait for tasks to finish in complete tranq
 
 ---
 
+#### `ahko.pause(): void`
+
+Pauses task dispatching. In-flight tasks run to completion, but pending tasks remain in the queue.
+
+---
+
+#### `ahko.resume(): void`
+
+Resumes task dispatching, immediately pumping accumulated tasks up to capacity.
+
+---
+
+#### `ahko.isPaused(): boolean`
+
+Returns whether the scheduler is currently paused.
+
+---
+
+#### `ahko.wrap<TArgs, TReturn>(fn: (...args: TArgs) => Promise<TReturn> | TReturn, options?: IScheduleOptions): (...args: TArgs) => Promise<TReturn>`
+
+Wraps an async function so every execution is routed through this scheduler instance with configured options.
+
+---
+
+#### `ahko.circuitState: ECircuitState | undefined`
+
+Current state of the circuit breaker (`"closed"`, `"open"`, `"half_open"`, or `undefined` if not configured).
+
+---
+
 #### `ahko.clear(): void`
 
 Cancels all pending, delayed, and coalesced tasks cleanly. In-flight running tasks continue to completion or abort via signal.
@@ -147,6 +182,24 @@ Returns an immutable snapshot of current scheduler telemetry.
 | `retriedTasks` | `number` | Cumulative count of retry attempts triggered. |
 | `totalDispatched` | `number` | Cumulative count of tasks dispatched to concurrency slots. |
 | `capacity` | `number` | Configured concurrency capacity. |
+| `isPaused` | `boolean` | Whether task dispatching is currently paused. |
+| `circuitState` | `ECircuitState \| undefined` | Current circuit breaker state if configured. |
+
+---
+
+### Static Methods
+
+#### `Ahko.loadConfig(config: IAhkoFileConfig): void`
+
+Programmatically loads declarative configuration into memory (universal across Node.js, browsers, and edge).
+
+#### `Ahko.loadConfigFile(filePath?: string): Promise<IAhkoFileConfig | undefined>`
+
+Asynchronously reads and parses `config.ahko.json` from the filesystem (Node.js).
+
+#### `Ahko.fromProfile(profileName?: string, overrides?: IAhkoOptions): Ahko`
+
+Instantiates an Ahko scheduler configured from a named profile.
 
 ---
 
@@ -208,6 +261,28 @@ interface IAhkoEventMap {
 }
 ```
 
+### `ECircuitState`
+```typescript
+enum ECircuitState {
+  CLOSED = "closed",
+  OPEN = "open",
+  HALF_OPEN = "half_open",
+}
+```
+
+### `ICircuitBreakerOptions`
+```typescript
+interface ICircuitBreakerOptions {
+  failureThreshold: number; // Consecutive failures before tripping OPEN
+  resetTimeoutMs: number;   // Cool-down window before trial call in HALF_OPEN
+}
+```
+
+### `TTaskPriority`
+```typescript
+type TTaskPriority = "high" | "normal" | "low" | number;
+```
+
 ---
 
 ## 3. Errors
@@ -221,6 +296,7 @@ import {
   AhkoConfigurationError,
   AhkoQueueError,
   AhkoTimeoutError,
+  AhkoCircuitBreakerOpenError,
 } from "@mrjacket/ahko";
 ```
 
@@ -228,7 +304,8 @@ import {
 - **`AhkoCancellationError`**: Thrown when a task is aborted.
 - **`AhkoConfigurationError`**: Thrown when invalid options (e.g. invalid concurrency or delay) are supplied.
 - **`AhkoQueueError`**: Thrown when queue constraints are violated.
-- **`AhkoTimeoutError`**: Thrown when a task exceeds its allotted timeout duration.
+- **`AhkoTimeoutError`**: Thrown when a task exceeds its allotted timeout duration or total execution budget.
+- **`AhkoCircuitBreakerOpenError`**: Thrown when task execution is rejected immediately because the circuit breaker is OPEN.
 
 ---
 

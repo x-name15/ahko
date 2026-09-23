@@ -256,6 +256,7 @@ console.log(ahko.battery());
 
 ## 10. Next Steps
 
+- Set up centralized limits with [Declarative Configuration (`config.ahko.json`)](./configuration.md).
 - Explore the complete [Library API Reference](./library.md).
 - Browse production patterns in [Production Recipes & Architectural Patterns](./recipes.md).
 - Learn about the internal [Architecture & Design Specifications](../architecture/ARCHITECTURE.md).

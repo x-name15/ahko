@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/x-name15/ahko/main/schema.json",
+  "title": "Ahko Configuration Schema",
+  "description": "JSON Schema for @mrjacket/ahko declarative configuration files (config.ahko.json)",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "URL to this JSON schema"
+    },
+    "default": {
+      "$ref": "#/definitions/profile",
+      "description": "Default scheduler profile applied when no named profile is requested"
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Named scheduler profiles for distinct workloads (e.g. crawler, critical-gateway, background-sync)",
+      "additionalProperties": {
+        "$ref": "#/definitions/profile"
+      }
+    }
+  },
+  "additionalProperties": false,
+  "definitions": {
+    "profile": {
+      "type": "object",
+      "properties": {
+        "concurrency": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "Maximum concurrent active tasks allowed to run simultaneously."
+        },
+        "minIntervalMs": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Minimum interval in milliseconds between consecutive task starts (rate limiting)."
+        },
+        "priority": {
+          "oneOf": [
+            {
+              "type": "string",
+              "enum": ["high", "normal", "low"],
+              "description": "Named priority level ('high' = 10, 'normal' = 0, 'low' = -10)"
+            },
+            {
+              "type": "number",
+              "description": "Custom numerical priority weight. Higher weights execute first."
+            }
+          ],
+          "description": "Default priority weight for tasks scheduled under this profile."
+        },
+        "strategy": {
+          "type": "string",
+          "enum": ["immediate", "delay", "idle", "throttle", "debounce"],
+          "description": "Default task scheduling strategy."
+        },
+        "delay": {
+          "type": "number",
+          "minimum": 0,
+          "description": "Delay in milliseconds when strategy is 'delay'."
+        },
+        "timeoutMs": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Per-attempt active execution deadline in milliseconds before aborting with AhkoTimeoutError."
+        },
+        "totalTimeoutMs": {
+          "type": "number",
+          "minimum": 1,
+          "description": "Overarching task deadline in milliseconds spanning queue wait, retries, and execution."
+        },
+        "retry": {
+          "type": "object",
+          "properties": {
+            "attempts": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Total execution attempts (e.g. 3 = initial attempt + 2 retries)."
+            },
+            "backoff": {
+              "type": "string",
+              "enum": ["exponential", "linear", "none"],
+              "default": "exponential",
+              "description": "Backoff curve strategy between retry attempts."
+            },
+            "baseDelay": {
+              "type": "number",
+              "minimum": 0,
+              "default": 250,
+              "description": "Initial backoff delay in milliseconds."
+            },
+            "maxDelay": {
+              "type": "number",
+              "minimum": 0,
+              "default": 10000,
+              "description": "Maximum backoff delay ceiling in milliseconds."
+            },
+            "jitter": {
+              "type": "boolean",
+              "default": false,
+              "description": "Whether to apply full jitter randomization to retry backoff intervals."
+            }
+          },
+          "required": ["attempts"],
+          "additionalProperties": false,
+          "description": "Automatic retry policy configuration."
+        },
+        "circuitBreaker": {
+          "type": "object",
+          "properties": {
+            "failureThreshold": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Number of consecutive failures required to trip the circuit to OPEN."
+            },
+            "resetTimeoutMs": {
+              "type": "number",
+              "minimum": 1,
+              "description": "Cool-down window in milliseconds before attempting recovery in HALF_OPEN."
+            }
+          },
+          "required": ["failureThreshold", "resetTimeoutMs"],
+          "additionalProperties": false,
+          "description": "Circuit breaker protection policy."
+        }
+      },
+      "additionalProperties": false
+    }
+  }
+}

@@ -1,3 +1,5 @@
+import type { ECircuitState } from "./circuit-breaker.model.js";
+
 /**
  * Telemetry snapshot of the Ahko scheduler.
  */
@@ -28,4 +30,10 @@ export interface IAhkoStats {
 
   /** Maximum concurrent execution capacity */
   capacity: number;
+
+  /** Whether task dispatching is currently paused */
+  isPaused: boolean;
+
+  /** Current state of the scheduler circuit breaker, if configured */
+  circuitState?: ECircuitState;
 }

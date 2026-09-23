@@ -84,3 +84,21 @@
 - **Decision 24: Standalone Executable Runnable Examples**:
   Created `examples/` directory with 6 zero-setup Node.js scripts demonstrating concurrency control, debounced search, throttled events, retry policies with jitter, idle execution, and graceful application termination.
 
+---
+
+## 2026-09-23 — Milestone 1.1.0 Architecture Decisions
+
+- **Decision 25: Martin Fowler Circuit Breaker State Machine & Fast-Failing**:
+  Implemented `CircuitBreakerCoordinator` following Martin Fowler's canonical state machine (`CLOSED` -> `OPEN` -> `HALF_OPEN`). When `failureThreshold` is exceeded, tasks fast-fail immediately with `AhkoCircuitBreakerOpenError` without consuming concurrency slots or dispatching work. After `resetTimeoutMs`, a single trial probe tests recovery, healing to `CLOSED` on success or immediately re-tripping to `OPEN` on failure.
+- **Decision 26: Stable Priority Queue via Priority Weight Insertion**:
+  Integrated `priority` option supporting named weights (`"high"`: 10, `"normal"`: 0, `"low"`: -10) and arbitrary numeric weights. Tasks are inserted into the queue using a stable binary/linear scan before the first item with strictly lower weight, guaranteeing that higher-priority tasks preempt pending work while preserving strict FIFO ordering among tasks with identical priority.
+- **Decision 27: Non-Destructive Flow Control (Pause & Resume)**:
+  Added `ahko.pause()` and `ahko.resume()`. Pausing suppresses the queue pump from dispatching new work while allowing in-flight active tasks to settle cleanly to completion. Resuming immediately resumes pumping up to available concurrency.
+- **Decision 28: Total Execution Deadline Budget (`totalTimeoutMs`)**:
+  Separated per-attempt active execution timeout (`timeoutMs`) from overarching task deadline (`totalTimeoutMs`). If the total time spanning queue wait, execution, and retry backoff delays exceeds `totalTimeoutMs`, the task runner is cancelled and rejected with `AhkoTimeoutError`. Unhandled promise rejections on cleanup timers are strictly suppressed with `.catch(() => {})`.
+- **Decision 29: Dual-Runtime Declarative Config (`config.ahko.json`) & Ergonomic Function Wrapping (`ahko.wrap`)**:
+  Created `config-loader` supporting universal programmatic config loading via `Ahko.loadConfig()` and safe Node.js filesystem loading via `Ahko.loadConfigFile()`. Added `ahko.wrap()` allowing functions to be decorated and scheduled transparently.
+- **Decision 30: Remediation of CodeQL Static Analysis Alerts**:
+  Remediated CodeQL alert #4 in `src/__tests__/e2e.test.ts` (removed unused `externalController`) and alert #3 in `examples/04-retry-backoff-jitter.mjs` (removed unused `sleep` helper).
+
+

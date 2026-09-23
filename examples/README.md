@@ -26,12 +26,20 @@ npm run build
 | **04: Retries & Jitter** | `node examples/04-retry-backoff-jitter.mjs` | Automatic retries with slot release, exponential backoff, and full jitter. |
 | **05: Idle Telemetry** | `node examples/05-idle-telemetry.mjs` | Background non-blocking execution (`ahko.idle`) and lifecycle event monitoring. |
 | **06: Graceful Shutdown** | `node examples/06-graceful-shutdown.mjs` | Safe process termination clearing backlog (`ahko.clear`) and awaiting in-flight work (`ahko.chill`). |
+| **07: Circuit Breaker** | `node examples/07-circuit-breaker.mjs` | Protecting downstream services with failure threshold trip, fast-failing, and cool-down recovery probe. |
+| **08: Priority & Pause/Resume** | `node examples/08-priority-queue.mjs` | Priority-based task dispatching and queue flow control via `pause()` and `resume()`. |
 
 ---
 
 ## Running All Examples
 
-You can run any script directly using Node:
+You can run all examples in sequence via:
+
+```bash
+npm run test:examples
+```
+
+Or run any script directly using Node:
 
 ```bash
 node examples/01-concurrency-and-pacing.mjs
@@ -40,4 +48,6 @@ node examples/03-throttle-events.mjs
 node examples/04-retry-backoff-jitter.mjs
 node examples/05-idle-telemetry.mjs
 node examples/06-graceful-shutdown.mjs
+node examples/07-circuit-breaker.mjs
+node examples/08-priority-queue.mjs
 ```

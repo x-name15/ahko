@@ -8,13 +8,18 @@ export {
   AhkoConfigurationError,
   AhkoQueueError,
   AhkoTimeoutError,
+  AhkoCircuitBreakerOpenError,
   type IAhkoTimeoutErrorOptions,
+  type IAhkoCircuitBreakerErrorOptions,
 } from "./errors/index.js";
 
 // Models and interfaces
 export {
   ETaskState,
   EScheduleStrategy,
+  ECircuitState,
+  TASK_PRIORITY_WEIGHTS,
+  resolvePriorityWeight,
 } from "./models/index.js";
 
 export type {
@@ -31,7 +36,25 @@ export type {
   TAhkoEventName,
   TAhkoEventHandler,
   TAhkoUnsubscribe,
+  TCircuitState,
+  ICircuitBreakerOptions,
+  ICircuitBreakerStats,
+  TTaskPriority,
+  IAhkoFileConfig,
+  IAhkoProfileConfig,
 } from "./models/index.js";
+
+// Config utilities
+export {
+  loadConfig,
+  resetConfig,
+  loadConfigFile,
+  getActiveConfig,
+  getProfileConfig,
+} from "./config/index.js";
+
+// Circuit Breaker Coordinator
+export { CircuitBreakerCoordinator } from "./scheduler/circuit-breaker.js";
 
 // Retry utilities
 export {
@@ -45,4 +68,3 @@ export {
   combineSignals,
   type ICombinedSignal,
 } from "./scheduler/signal.js";
-

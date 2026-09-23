@@ -94,6 +94,9 @@ export class TaskRunner<T> {
     }
   }
 
+  /** Flag indicating if runner was aborted by an overall total timeout deadline */
+  public totalTimedOut = false;
+
   /**
    * Gets the current lifecycle state of the task.
    */
@@ -129,7 +132,11 @@ export class TaskRunner<T> {
    * @returns A promise resolving to true if retry should proceed, false otherwise.
    */
   public async canRetry(error: unknown, retryOptions?: IRetryOptions): Promise<boolean> {
-    if (this._state === ETaskState.CANCELLED || (this.externalSignal?.aborted ?? false)) {
+    if (
+      this.totalTimedOut ||
+      this._state === ETaskState.CANCELLED ||
+      (this.externalSignal?.aborted ?? false)
+    ) {
       return false;
     }
 
@@ -179,15 +186,18 @@ export class TaskRunner<T> {
 
     const abortPromise = new Promise<never>((_, reject) => {
       abortListener = () => {
-        if (this._state === ETaskState.TIMED_OUT) {
+        const reason = this.abortController.signal.reason;
+        if (this._state === ETaskState.TIMED_OUT || reason instanceof AhkoTimeoutError) {
+          this._state = ETaskState.TIMED_OUT;
           reject(
-            new AhkoTimeoutError(
-              `Task execution timed out after ${this.timeoutMs}ms`,
-              { timeoutMs: this.timeoutMs }
-            )
+            reason instanceof AhkoTimeoutError
+              ? reason
+              : new AhkoTimeoutError(
+                  `Task execution timed out after ${this.timeoutMs}ms`,
+                  { timeoutMs: this.timeoutMs }
+                )
           );
         } else {
-          const reason = this.abortController.signal.reason;
           reject(
             new AhkoCancellationError("Task was cancelled during execution", {
               cause: reason instanceof Error ? reason : undefined,
@@ -225,6 +235,8 @@ export class TaskRunner<T> {
 
     // Suppress unhandled rejection in background if task finishes or fails after timeout/cancellation
     taskExecutionPromise.catch(() => {});
+    abortPromise.catch(() => {});
+    timeoutPromise?.catch(() => {});
 
     const racePromises: Array<Promise<T | never>> = [
       taskExecutionPromise,
@@ -335,6 +347,39 @@ export class TaskRunner<T> {
         { cause: reason instanceof Error ? reason : undefined }
       );
       this.rejectPromise(cancellationError);
+      this.onCancel?.(this);
+    }
+  }
+
+  /**
+   * Times out the task, aborting pending or running execution with AhkoTimeoutError.
+   *
+   * @param timeoutMs - Timeout duration in milliseconds.
+   * @param message - Optional custom timeout message.
+   */
+  public timeout(timeoutMs: number, message?: string): void {
+    if (
+      this._state === ETaskState.COMPLETED ||
+      this._state === ETaskState.FAILED ||
+      this._state === ETaskState.CANCELLED ||
+      this._state === ETaskState.TIMED_OUT
+    ) {
+      return;
+    }
+
+    const wasPending = this._state === ETaskState.PENDING;
+    this._state = ETaskState.TIMED_OUT;
+    this.totalTimedOut = true;
+    this.clearTimeoutTimer();
+    const timeoutError = new AhkoTimeoutError(
+      message ?? `Task execution timed out after ${timeoutMs}ms`,
+      { timeoutMs }
+    );
+    this.abortController.abort(timeoutError);
+    this.cleanup();
+
+    if (wasPending) {
+      this.rejectPromise(timeoutError);
       this.onCancel?.(this);
     }
   }

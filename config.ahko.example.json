@@ -1,0 +1,37 @@
+{
+  "$schema": "https://raw.githubusercontent.com/x-name15/ahko/main/schema.json",
+  "default": {
+    "concurrency": 2,
+    "minIntervalMs": 50,
+    "priority": "normal",
+    "timeoutMs": 10000,
+    "retry": {
+      "attempts": 3,
+      "backoff": "exponential",
+      "baseDelay": 100,
+      "maxDelay": 3000,
+      "jitter": true
+    }
+  },
+  "profiles": {
+    "crawler": {
+      "concurrency": 4,
+      "minIntervalMs": 250,
+      "priority": "low"
+    },
+    "critical-gateway": {
+      "concurrency": 1,
+      "priority": 100,
+      "totalTimeoutMs": 5000,
+      "circuitBreaker": {
+        "failureThreshold": 3,
+        "resetTimeoutMs": 1000
+      }
+    },
+    "background-sync": {
+      "concurrency": 2,
+      "strategy": "idle",
+      "priority": "low"
+    }
+  }
+}

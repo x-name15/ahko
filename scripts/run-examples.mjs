@@ -8,6 +8,8 @@ const examples = [
   "04-retry-backoff-jitter.mjs",
   "05-idle-telemetry.mjs",
   "06-graceful-shutdown.mjs",
+  "07-circuit-breaker.mjs",
+  "08-priority-queue.mjs",
 ];
 
 console.log("Running all ahko examples...\n");

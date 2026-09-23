@@ -9,8 +9,6 @@
 
 import { Ahko } from '../dist/index.js';
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
 async function main() {
   console.log('=== Example 04: Retries with Exponential Backoff & Jitter ===\n');
 

@@ -15,6 +15,9 @@
   <a href="https://www.npmjs.com/package/@mrjacket/ahko">
     <img src="https://img.shields.io/node/v/@mrjacket/ahko.svg" alt="node">
   </a>
+  <a href="https://www.npmjs.com/package/@mrjacket/ahko">
+    <img src="https://img.shields.io/npm/dm/@mrjacket/ahko.svg" alt="npm downloads">
+  </a>
   <a href="https://github.com/x-name15/ahko/actions/workflows/ci.yml">
     <img src="https://github.com/x-name15/ahko/actions/workflows/ci.yml/badge.svg" alt="ci">
   </a>
@@ -281,6 +284,119 @@ console.log(ahko.battery());
 // { level: 3, chill: true, status: "low-energy", quote: "Mwee... my battery is low, but all your tasks are handled completely chill." }
 ```
 
+### 12. Priority-Aware Scheduling
+
+Ensure critical tasks jump ahead of normal or background work while preserving strict FIFO ordering among peers:
+
+```typescript
+// Named priorities: "high" (10), "normal" (0), "low" (-10), or custom numeric weights
+await ahko.schedule(criticalTask, { priority: "high" });
+await ahko.schedule(backgroundSync, { priority: "low" });
+await ahko.schedule(superUrgent, { priority: 100 });
+```
+
+### 13. Circuit Breaker Protection
+
+Protect fragile downstream services and databases from cascading failures. When consecutive failures meet `failureThreshold`, the circuit trips to `OPEN` and fast-fails tasks immediately without execution:
+
+```typescript
+const ahko = new Ahko({
+  concurrency: 2,
+  circuitBreaker: {
+    failureThreshold: 3, // trip after 3 consecutive failures
+    resetTimeoutMs: 15000, // wait 15s before attempting recovery probe
+  },
+});
+
+try {
+  await ahko.schedule(callFlakyService);
+} catch (err) {
+  if (err instanceof AhkoCircuitBreakerOpenError) {
+    console.warn("Fast-failed: Circuit breaker is OPEN!");
+  }
+}
+```
+
+### 14. Pause & Resume Flow Control
+
+Temporarily halt queue dispatching without aborting in-flight tasks. Resuming immediately pumps accumulated tasks up to capacity:
+
+```typescript
+// Stop dispatching new tasks
+ahko.pause();
+console.log(ahko.isPaused()); // true
+
+// In-flight tasks finish peacefully...
+
+// Resume dispatching
+ahko.resume();
+```
+
+### 15. Total Timeout Budget
+
+Enforce an overarching deadline spanning queue wait time, execution, and retries:
+
+```typescript
+// Task will abort with AhkoTimeoutError if total elapsed time exceeds 5000ms
+await ahko.schedule(fetchWithRetries, {
+  totalTimeoutMs: 5000,
+  retry: { attempts: 3, baseDelay: 1000 },
+});
+```
+
+### 16. Function Wrapping (`ahko.wrap`)
+
+Decorate any async function to automatically route every invocation through Ahko:
+
+```typescript
+const fetchUser = ahko.wrap(
+  async (userId: string) => {
+    const res = await fetch(`https://api.example.com/users/${userId}`);
+    return res.json();
+  },
+  { priority: "high", retry: { attempts: 2 } }
+);
+
+// Seamlessly executed via scheduler
+const user = await fetchUser("usr_42");
+```
+
+### 17. Declarative Configuration (`config.ahko.json`)
+
+Define scheduler defaults and workload profiles cleanly in JSON:
+
+```json
+{
+  "default": {
+    "concurrency": 2,
+    "minIntervalMs": 50,
+    "priority": "normal"
+  },
+  "profiles": {
+    "crawler": {
+      "concurrency": 4,
+      "minIntervalMs": 200,
+      "priority": "low"
+    },
+    "critical-gateway": {
+      "concurrency": 1,
+      "circuitBreaker": {
+        "failureThreshold": 3,
+        "resetTimeoutMs": 10000
+      }
+    }
+  }
+}
+```
+
+```typescript
+// Programmatically or from config file:
+Ahko.loadConfig(config);
+
+// Instantiate configured scheduler from profile
+const gateway = Ahko.fromProfile("critical-gateway");
+```
+
 ---
 
 ## Documentation
@@ -291,10 +407,11 @@ Comprehensive guides and technical documentation are available in the [`docs/`](
 |---|---|
 | [**Documentation Portal**](./docs/README.md) | Master overview and index of all guides and specifications. |
 | [**Getting Started**](./docs/guides/getting-started.md) | Quickstart guide, installation, and fundamental usage patterns. |
+| [**Declarative Configuration**](./docs/guides/configuration.md) | Centralizing limits in `config.ahko.json`, `$schema` validation, named profiles, and fallback rules. |
 | [**Library API**](./docs/guides/library.md) | Complete programmatic API reference, TypeScript interfaces, and options. |
 | [**Production Recipes**](./docs/guides/recipes.md) | Battle-tested recipes (paced API client, debounced search, throttled scroll, graceful shutdown). |
 | [**Architecture**](./docs/architecture/ARCHITECTURE.md) | Architectural specifications, lifecycle state machine, and design decisions. |
-| [**Roadmap**](./docs/architecture/ROADMAP.md) | Milestone progression from 0.1.0 through 1.0.0. |
+| [**Roadmap**](./docs/architecture/ROADMAP.md) | Milestone progression from 0.1.0 through 1.1.0. |
 | [**Engineering Log**](./docs/architecture/LOG.md) | Chronological log of engineering decisions and ADRs. |
 
 > **Runnable Examples:** A comprehensive suite of standalone, runnable Node.js scripts is available in the [`examples/`](./examples/) folder. See [`examples/README.md`](./examples/README.md) for details.
@@ -311,6 +428,8 @@ Creates an ahko scheduler instance.
 |---|---|---|---|
 | `concurrency` | `number` | `Infinity` | Maximum concurrent tasks allowed to run simultaneously. Must be $\ge 1$. |
 | `minIntervalMs` | `number` | `0` | Minimum interval in milliseconds between consecutive task starts. Must be $\ge 0$. |
+| `circuitBreaker` | `ICircuitBreakerOptions` | `undefined` | Optional failure threshold and cooldown reset configuration. |
+| `profile` | `string` | `undefined` | Name of declarative profile to inherit settings from. |
 
 ### `ahko.schedule<T>(task: ITask<T>, options?: IScheduleOptions): Promise<T>`
 
@@ -319,23 +438,37 @@ Schedules an asynchronous task with full return type inference.
 | Option | Type | Default | Description |
 |---|---|---|---|
 | `strategy` | `"immediate" \| "delay" \| "idle" \| "throttle" \| "debounce"` | `"immediate"` | Scheduling execution strategy. |
+| `priority` | `"high" \| "normal" \| "low" \| number` | `"normal"` | Task priority weight for queue ordering. |
 | `delay` | `number` | `0` | Delay in milliseconds when strategy is `"delay"`. |
 | `key` | `string \| symbol` | `undefined` | Explicit identity key for `"debounce"` and `"throttle"`. |
 | `waitMs` | `number` | `undefined` | Window duration in ms for debounce quiet period or throttle interval. |
 | `idleTimeout` | `number` | `undefined` | Maximum time to wait for idle window before forcing queue entry. |
 | `retry` | `IRetryOptions` | `undefined` | Automatic retry policy (attempts, backoff, jitter, predicate). |
 | `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
+| `totalTimeoutMs` | `number` | `undefined` | Total execution budget across wait time, retries, and execution. |
 | `signal` | `AbortSignal` | `undefined` | Optional external `AbortSignal` for cooperative cancellation. |
 
-### `ahko.debounce<T>(key: string | symbol, task: ITask<T>, waitMs: number, options?: IScheduleOptions): Promise<T>`
+### `ahko.wrap(fn, options?)`
+
+Returns a wrapped version of `fn` routed through the scheduler.
+
+### `ahko.pause() / ahko.resume() / ahko.isPaused()`
+
+Pauses and resumes task dispatching.
+
+### `ahko.circuitState`
+
+Returns current circuit breaker state (`"closed" | "open" | "half_open"` or `undefined`).
+
+### `ahko.debounce<T>(key, task, waitMs, options?): Promise<T>`
 
 Convenience method scheduling a debounced task with key-based Promise coalescing.
 
-### `ahko.throttle<T>(key: string | symbol, task: ITask<T>, waitMs: number, options?: IScheduleOptions): Promise<T>`
+### `ahko.throttle<T>(key, task, waitMs, options?): Promise<T>`
 
 Convenience method scheduling a throttled task with leading execution and coalesced trailing run.
 
-### `ahko.idle<T>(task: ITask<T>, options?: Omit<IScheduleOptions, "strategy">): Promise<T>`
+### `ahko.idle<T>(task, options?): Promise<T>`
 
 Convenience method scheduling a task under `strategy: "idle"`.
 
@@ -369,7 +502,7 @@ Returns mascot battery status and quote.
 
 ### `ahko.stats(): IAhkoStats`
 
-Returns a snapshot of current task counters, retry counts, total dispatches, and queue capacity.
+Returns a snapshot of current task counters, retry counts, total dispatches, pause status, circuit state, and queue capacity.
 
 ---
 
@@ -381,7 +514,8 @@ All scheduler errors inherit from `AhkoError`:
 - `AhkoCancellationError`: Thrown when a task is aborted.
 - `AhkoConfigurationError`: Thrown when invalid options are provided.
 - `AhkoQueueError`: Thrown when queue constraints are violated.
-- `AhkoTimeoutError`: Thrown when a task exceeds its configured duration.
+- `AhkoTimeoutError`: Thrown when a task exceeds its configured duration or totalTimeoutMs.
+- `AhkoCircuitBreakerOpenError`: Thrown when task execution is fast-failed because the circuit breaker is OPEN.
 
 ---
 

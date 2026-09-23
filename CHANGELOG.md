@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-23 — Declarative Config, Circuit Breaker & Priority Queue
+
+### Added
+- Declarative configuration file support via `config.ahko.json` with multi-profile support (e.g. `default`, `crawler`, `critical-gateway`).
+- Static configuration loaders: `Ahko.loadConfig(config)` for universal programmatic profile loading (Node.js & browser), `Ahko.loadConfigFile(path?)` for asynchronous filesystem loading, and `Ahko.fromProfile(name, overrides?)`.
+- Martin Fowler Circuit Breaker pattern with `ECircuitState` (`CLOSED`, `OPEN`, `HALF_OPEN`), `CircuitBreakerCoordinator`, and `AhkoCircuitBreakerOpenError`:
+  - Protects downstream services by tracking consecutive failures against a `failureThreshold`.
+  - Fast-fails pending and incoming tasks without execution when OPEN.
+  - Automatically transitions to HALF_OPEN after `resetTimeoutMs` cooldown to allow a recovery trial.
+  - Heals to CLOSED on trial success or immediately re-trips to OPEN on trial failure.
+- Priority queue scheduling with stable FIFO ordering:
+  - Supports named priorities (`"high"`, `"normal"`, `"low"`) and arbitrary numerical weights (e.g. `100`, `-5`).
+  - Tasks with higher priority preempt lower priority tasks in the queue; tasks with identical priority preserve strict FIFO ordering.
+- Queue flow control via `ahko.pause()`, `ahko.resume()`, and `ahko.isPaused()`:
+  - Halts dispatching pending tasks without interrupting currently executing tasks.
+  - Immediately dispatches accumulated tasks upon resume up to concurrency limits.
+- Total Timeout Budget (`totalTimeoutMs`):
+  - Sets an overarching execution deadline spanning queue wait time, execution, and retry delays.
+  - Cancels task runners cleanly with `AhkoTimeoutError` when the budget expires.
+- Ergonomic function wrapping via `ahko.wrap(fn, options)`:
+  - Wraps any sync or async function returning a decorated function routed through the scheduler with pre-configured priorities and options.
+- New runnable examples:
+  - `examples/07-circuit-breaker.mjs`: circuit breaker tripping, fast-failing, and cooldown recovery.
+  - `examples/08-priority-queue.mjs`: priority queue ordering and pause/resume flow control.
+  - `config.ahko.example.json`: reference declarative schema configuration file.
+- Extended telemetry in `ahko.stats()`: `isPaused` boolean and `circuitState` indicator.
+
+### Fixed
+- Remediated 2 CodeQL static analysis security alerts:
+  - Alert #4: Removed unused `externalController` declaration in `src/__tests__/e2e.test.ts`.
+  - Alert #3: Removed unused `sleep` helper declaration in `examples/04-retry-backoff-jitter.mjs`.
+
+---
+
 ## [1.0.0] - 2026-09-23 — Stable Scheduler Release
 
 ### Added

@@ -3,3 +3,4 @@ export * from "./cancellation.error.js";
 export * from "./configuration.error.js";
 export * from "./queue.error.js";
 export * from "./timeout.error.js";
+export * from "./circuit-breaker.error.js";

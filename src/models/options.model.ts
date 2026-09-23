@@ -1,3 +1,5 @@
+import type { ICircuitBreakerOptions } from "./circuit-breaker.model.js";
+import type { TTaskPriority } from "./priority.model.js";
 import type { IRetryOptions } from "./retry.model.js";
 import type { TScheduleStrategy } from "./strategy.model.js";
 
@@ -38,6 +40,21 @@ export interface IScheduleOptions {
   timeoutMs?: number;
 
   /**
+   * Overall budget in milliseconds allowed for the entire task lifecycle,
+   * including queue wait times, execution durations, and retry backoffs.
+   * If exceeded, the task rejects with an AhkoTimeoutError.
+   */
+  totalTimeoutMs?: number;
+
+  /**
+   * Priority assigned to the task ("high", "normal", "low", or explicit numeric value).
+   * High priority tasks jump ahead of lower priority tasks in the pending queue.
+   * FIFO ordering is strictly preserved among tasks of equal priority.
+   * @default "normal" (0)
+   */
+  priority?: TTaskPriority;
+
+  /**
    * Explicit identity key for "debounce" and "throttle" strategies.
    * Tasks sharing the same key coalesce into shared executions.
    */
@@ -75,4 +92,14 @@ export interface IAhkoOptions {
    * @default 0
    */
   minIntervalMs?: number;
+
+  /**
+   * Optional circuit breaker policy to guard against cascading failures.
+   */
+  circuitBreaker?: ICircuitBreakerOptions;
+
+  /**
+   * Optional named profile from `config.ahko.json` to inherit configuration defaults from.
+   */
+  profile?: string;
 }

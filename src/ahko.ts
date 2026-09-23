@@ -1,17 +1,28 @@
 import { AhkoConfigurationError } from "./errors/configuration.error.js";
+import {
+  getActiveConfig,
+  getProfileConfig,
+  loadConfig,
+  loadConfigFile,
+  resetConfig,
+} from "./config/config-loader.js";
+import type { ECircuitState } from "./models/circuit-breaker.model.js";
+import type { IAhkoFileConfig, IAhkoProfileConfig } from "./models/config.model.js";
 import type { TAhkoEventName, TAhkoEventHandler, TAhkoUnsubscribe } from "./models/events.model.js";
 import type { IAhkoOptions, IScheduleOptions } from "./models/options.model.js";
 import type { IAhkoStats } from "./models/stats.model.js";
 import { EScheduleStrategy } from "./models/strategy.model.js";
 import type { ITask } from "./models/task.model.js";
+import type { CircuitBreakerCoordinator } from "./scheduler/circuit-breaker.js";
 import { TaskQueue } from "./scheduler/task-queue.js";
 import { TaskRunner } from "./scheduler/task-runner.js";
 
 /**
  * Ahko — Low-energy asynchronous task scheduler.
  *
- * Coordinates execution timing, enforces concurrency limits, and cooperates
- * natively with AbortSignal cancellation.
+ * Coordinates execution timing, enforces concurrency limits, manages priorities,
+ * provides circuit-breaker stability, supports pause/resume flow control,
+ * and cooperates natively with AbortSignal cancellation.
  *
  * @example
  * ```typescript
@@ -29,6 +40,58 @@ export class Ahko {
   /** Internal queue and concurrency manager */
   private readonly queue: TaskQueue;
 
+  /** Default schedule options inherited from profile if configured */
+  private readonly defaultScheduleOptions?: Partial<IScheduleOptions>;
+
+  /**
+   * Programmatically loads a declarative configuration into memory.
+   * Works universally across Node.js, browsers, and edge runtimes.
+   *
+   * @param config - File configuration object containing default and named profiles.
+   */
+  public static loadConfig(config: IAhkoFileConfig): void {
+    loadConfig(config);
+  }
+
+  /**
+   * Asynchronously loads a configuration file from disk (Node.js).
+   *
+   * @param filePath - Path to configuration file (default: "config.ahko.json").
+   */
+  public static async loadConfigFile(filePath?: string): Promise<IAhkoFileConfig | undefined> {
+    return loadConfigFile(filePath);
+  }
+
+  /**
+   * Resets the active declarative configuration.
+   */
+  public static resetConfig(): void {
+    resetConfig();
+  }
+
+  /**
+   * Retrieves the currently active declarative configuration.
+   */
+  public static getActiveConfig(): IAhkoFileConfig | undefined {
+    return getActiveConfig();
+  }
+
+  /**
+   * Instantiates an Ahko scheduler initialized with settings from a declarative profile.
+   *
+   * @param profileName - Optional name of the profile (e.g. "api", "background").
+   * @param overrides - Optional scheduler options overriding profile values.
+   * @returns A new configured Ahko instance.
+   */
+  public static fromProfile(profileName?: string, overrides?: IAhkoOptions): Ahko {
+    const profile = getProfileConfig(profileName);
+    return new Ahko({
+      ...profile,
+      ...overrides,
+      circuitBreaker: overrides?.circuitBreaker ?? profile?.circuitBreaker,
+    });
+  }
+
   /**
    * Initializes a new Ahko scheduler instance.
    *
@@ -41,7 +104,90 @@ export class Ahko {
    * ```
    */
   constructor(options?: IAhkoOptions) {
-    this.queue = new TaskQueue(options?.concurrency, options?.minIntervalMs);
+    const profile = options?.profile ? getProfileConfig(options.profile) : getProfileConfig();
+
+    const mergedOptions: IAhkoOptions = {
+      ...profile,
+      ...options,
+      circuitBreaker: options?.circuitBreaker ?? profile?.circuitBreaker,
+    };
+
+    if (profile) {
+      this.defaultScheduleOptions = {
+        priority: profile.priority,
+        retry: profile.retry,
+        timeoutMs: profile.timeoutMs,
+        totalTimeoutMs: profile.totalTimeoutMs,
+      };
+    }
+
+    this.queue = new TaskQueue(
+      mergedOptions.concurrency,
+      mergedOptions.minIntervalMs,
+      mergedOptions.circuitBreaker
+    );
+  }
+
+  /**
+   * Pauses scheduler dispatch. In-flight tasks run to completion, but pending tasks remain queued.
+   */
+  public pause(): void {
+    this.queue.pause();
+  }
+
+  /**
+   * Resumes scheduler dispatch, immediately executing waiting tasks up to available concurrency.
+   */
+  public resume(): void {
+    this.queue.resume();
+  }
+
+  /**
+   * Checks whether the scheduler is currently paused.
+   */
+  public isPaused(): boolean {
+    return this.queue.isPaused();
+  }
+
+  /**
+   * Current circuit breaker state if circuit breaker protection is configured.
+   */
+  public get circuitState(): ECircuitState | undefined {
+    return this.queue.circuitBreakerCoordinator?.state;
+  }
+
+  /**
+   * Access to the underlying circuit breaker coordinator instance if configured.
+   */
+  public get circuitBreaker(): CircuitBreakerCoordinator | undefined {
+    return this.queue.circuitBreakerCoordinator;
+  }
+
+  /**
+   * Wraps an async function so every execution is automatically routed through this Ahko scheduler.
+   *
+   * @template TArgs - Parameter types of the wrapped function.
+   * @template TReturn - Return type of the wrapped function.
+   * @param fn - The function to wrap.
+   * @param options - Optional scheduling options applied to every wrapped call.
+   * @returns A wrapped function returning a Promise.
+   *
+   * @example
+   * ```typescript
+   * const fetchUser = ahko.wrap(async (id: string) => api.getUser(id), { priority: "high" });
+   * const user = await fetchUser("usr_123");
+   * ```
+   */
+  public wrap<TArgs extends unknown[], TReturn>(
+    fn: (...args: TArgs) => Promise<TReturn> | TReturn,
+    options?: IScheduleOptions
+  ): (...args: TArgs) => Promise<TReturn> {
+    if (typeof fn !== "function") {
+      throw new AhkoConfigurationError("Target to wrap must be a valid function.");
+    }
+    return (...args: TArgs) => {
+      return this.schedule(() => fn(...args), options);
+    };
   }
 
   /**
@@ -49,23 +195,21 @@ export class Ahko {
    *
    * @template T - Inferred return type of the task.
    * @param task - Asynchronous or synchronous task function accepting an {@link ITaskContext}.
-   * @param options - Task-specific scheduling options such as strategy, delay, and cancellation signal.
+   * @param options - Task-specific scheduling options such as strategy, priority, delay, and cancellation signal.
    * @returns A promise that resolves with the task's return value.
    *
    * @throws {AhkoConfigurationError} If the task is not a function or options are invalid.
    * @throws {AhkoCancellationError} If the task is cancelled prior to or during execution.
-   * @throws {AhkoTimeoutError} If task execution exceeds timeoutMs.
+   * @throws {AhkoTimeoutError} If task execution exceeds timeoutMs or totalTimeoutMs.
+   * @throws {AhkoCircuitBreakerOpenError} If the circuit breaker is OPEN and rejects the execution.
    *
    * @example
    * ```typescript
    * // Immediate execution (subject to concurrency)
    * const count = await ahko.schedule(async () => 42);
    *
-   * // Delayed execution
-   * await ahko.schedule(
-   *   async ({ signal }) => doWork({ signal }),
-   *   { strategy: "delay", delay: 1000 }
-   * );
+   * // High priority task
+   * await ahko.schedule(doUrgentWork, { priority: "high" });
    * ```
    */
   public schedule<T>(task: ITask<T>, options?: IScheduleOptions): Promise<T> {
@@ -73,52 +217,57 @@ export class Ahko {
       throw new AhkoConfigurationError("Task must be a valid function.");
     }
 
-    const strategy = options?.strategy ?? EScheduleStrategy.IMMEDIATE;
+    const mergedOptions: IScheduleOptions = {
+      ...this.defaultScheduleOptions,
+      ...options,
+    };
+
+    const strategy = mergedOptions.strategy ?? EScheduleStrategy.IMMEDIATE;
 
     if (strategy === EScheduleStrategy.DEBOUNCE) {
-      if (!options?.key || (typeof options.key !== "string" && typeof options.key !== "symbol")) {
+      if (!mergedOptions.key || (typeof mergedOptions.key !== "string" && typeof mergedOptions.key !== "symbol")) {
         throw new AhkoConfigurationError(
           `Strategy "debounce" requires a valid "key" of type string or symbol.`
         );
       }
-      const waitMs = options.waitMs ?? options.delay;
+      const waitMs = mergedOptions.waitMs ?? mergedOptions.delay;
       if (typeof waitMs !== "number" || Number.isNaN(waitMs) || !Number.isFinite(waitMs) || waitMs < 0) {
         throw new AhkoConfigurationError(
           `Strategy "debounce" requires a non-negative finite "waitMs" or "delay" in milliseconds.`
         );
       }
       return this.queue.debounceCoordinator.schedule(
-        options.key,
+        mergedOptions.key,
         task,
         waitMs,
-        options,
+        mergedOptions,
         (t, opts) => this.schedule(t, { ...opts, strategy: EScheduleStrategy.IMMEDIATE })
       );
     }
 
     if (strategy === EScheduleStrategy.THROTTLE) {
-      if (!options?.key || (typeof options.key !== "string" && typeof options.key !== "symbol")) {
+      if (!mergedOptions.key || (typeof mergedOptions.key !== "string" && typeof mergedOptions.key !== "symbol")) {
         throw new AhkoConfigurationError(
           `Strategy "throttle" requires a valid "key" of type string or symbol.`
         );
       }
-      const waitMs = options.waitMs ?? options.delay;
+      const waitMs = mergedOptions.waitMs ?? mergedOptions.delay;
       if (typeof waitMs !== "number" || Number.isNaN(waitMs) || !Number.isFinite(waitMs) || waitMs < 0) {
         throw new AhkoConfigurationError(
           `Strategy "throttle" requires a non-negative finite "waitMs" or "delay" in milliseconds.`
         );
       }
       return this.queue.throttleCoordinator.schedule(
-        options.key,
+        mergedOptions.key,
         task,
         waitMs,
-        options,
+        mergedOptions,
         (t, opts) => this.schedule(t, { ...opts, strategy: EScheduleStrategy.IMMEDIATE })
       );
     }
 
-    const runner = new TaskRunner<T>(task, options?.signal, options?.timeoutMs);
-    return this.queue.enqueue(runner, options);
+    const runner = new TaskRunner<T>(task, mergedOptions.signal, mergedOptions.timeoutMs);
+    return this.queue.enqueue(runner, mergedOptions);
   }
 
   /**
@@ -198,12 +347,12 @@ export class Ahko {
   /**
    * Retrieves real-time telemetry metrics from the scheduler.
    *
-   * @returns An {@link IAhkoStats} snapshot of active, pending, completed, failed, cancelled, and timed out tasks.
+   * @returns An {@link IAhkoStats} snapshot of active, pending, completed, failed, cancelled, timed out tasks, pause status, and circuit state.
    *
    * @example
    * ```typescript
    * const stats = ahko.stats();
-   * console.log(`Active: ${stats.activeTasks}, Pending: ${stats.pendingTasks}`);
+   * console.log(`Active: ${stats.activeTasks}, Pending: ${stats.pendingTasks}, Paused: ${stats.isPaused}`);
    * ```
    */
   public stats(): IAhkoStats {

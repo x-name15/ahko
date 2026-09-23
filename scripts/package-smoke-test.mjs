@@ -14,6 +14,16 @@ const required = [
   "calculateBackoff",
   "DEFAULT_BASE_DELAY",
   "DEFAULT_MAX_DELAY",
+  "AhkoCircuitBreakerOpenError",
+  "ECircuitState",
+  "TASK_PRIORITY_WEIGHTS",
+  "resolvePriorityWeight",
+  "loadConfig",
+  "resetConfig",
+  "loadConfigFile",
+  "getActiveConfig",
+  "getProfileConfig",
+  "CircuitBreakerCoordinator",
 ];
 
 const missing = required.filter((name) => !(name in pkg));
