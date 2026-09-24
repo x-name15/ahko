@@ -24,6 +24,7 @@ new Ahko(options?: IAhkoOptions): Ahko
 | `concurrency` | `number` | `Infinity` | Maximum concurrent active tasks allowed to run simultaneously. Must be $\ge 1$. |
 | `minIntervalMs` | `number` | `0` | Minimum interval in milliseconds between consecutive task starts (rate limiting). Must be $\ge 0$. |
 | `circuitBreaker` | `ICircuitBreakerOptions` | `undefined` | Optional circuit breaker failure threshold and cooldown reset configuration. |
+| `adaptive` | `IAdaptiveConcurrencyOptions` | `undefined` | Optional AIMD adaptive concurrency options based on task execution latency. |
 | `profile` | `string` | `undefined` | Optional declarative profile name to inherit configuration from. |
 
 ---
@@ -53,6 +54,7 @@ Schedules a task for controlled execution. Preserves the exact return type `T` o
 | `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
 | `totalTimeoutMs` | `number` | `undefined` | Total execution budget across queue wait time, retries, and execution before aborting with `AhkoTimeoutError`. |
 | `signal` | `AbortSignal` | `undefined` | Optional external abort signal for cooperative cancellation. |
+| `tags` | `string[]` | `undefined` | Optional array of classification tags for metric grouping and selective cancellation. |
 
 ##### Throws
 - `AhkoConfigurationError`: If `task` is not a function or options are invalid.
@@ -85,6 +87,42 @@ Convenience method scheduling a throttled task with leading execution and coales
 - The first invocation on an idle `key` runs immediately (leading edge).
 - Subsequent calls within `waitMs` coalesce into a single trailing run dispatched when the window timer expires.
 
+#### `ahko.concurrency: number`
+
+Getter returning the current concurrency capacity limit.
+
+---
+
+#### `ahko.setConcurrency(newConcurrency: number): void`
+
+Dynamically adjusts the scheduler's concurrency limit at runtime. Dispatches waiting tasks immediately if capacity is expanded.
+
+---
+
+#### `ahko.map<TItem, TResult>(items: Iterable<TItem>, fn: (item: TItem, index: number, context: ITaskContext) => Promise<TResult> | TResult, options?: IBatchMapOptions<TItem, TResult>): Promise<TResult[]>`
+
+Concurrently transforms an iterable sequence into an array with strict index ordering.
+- Supports localized concurrency caps per-batch via `options.concurrency` (falls back to global scheduler concurrency).
+- Supports fail-fast abort with `stopOnError: true` or settled error propagation with `stopOnError: false` (default).
+
+---
+
+#### `ahko.each<TItem>(items: Iterable<TItem>, fn: (item: TItem, index: number, context: ITaskContext) => Promise<void> | void, options?: IBatchOptions): Promise<void>`
+
+Iterates over an iterable sequence concurrently, executing the callback for each element and resolving to `Promise<void>`.
+
+---
+
+#### `ahko.cancelByTag(tag: string, reason?: unknown): number`
+
+Cancels all pending, delayed, and active tasks marked with the specified tag. Returns the number of cancelled tasks.
+
+---
+
+#### `ahko.statsByTag(tag: string): { activeTasks: number; pendingTasks: number }`
+
+Returns active and pending task counts for a specific classification tag.
+
 ---
 
 #### `ahko.on<K>(event: K, handler: (payload: IAhkoEventMap[K]) => void): () => void`
@@ -96,6 +134,7 @@ Supported events:
 - `"task:fail"`: `{ taskId: string, attempt: number, error: unknown, willRetry: boolean }`
 - `"task:cancel"`: `{ taskId: string, reason: unknown }`
 - `"task:timeout"`: `{ taskId: string, timeoutMs: number }`
+- `"concurrency:change"`: `{ previousConcurrency: number, currentConcurrency: number, reason: string }`
 - `"idle"`: `{ timestamp: number }`
 
 ---

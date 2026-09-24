@@ -56,18 +56,28 @@ export class TaskRunner<T> {
   /** Duration of the most recent execution attempt in milliseconds */
   public lastDurationMs = 0;
 
+  /** Set of classification tags associated with this task */
+  public readonly tags: ReadonlySet<string>;
+
   /**
    * Creates a new TaskRunner instance.
    *
    * @param task - The asynchronous work unit to run.
    * @param externalSignal - Optional external AbortSignal to propagate.
    * @param timeoutMs - Optional maximum execution time in milliseconds.
+   * @param tags - Optional array of tags for classifying and selectively cancelling tasks.
    */
-  constructor(task: ITask<T>, externalSignal?: AbortSignal, timeoutMs?: number) {
+  constructor(
+    task: ITask<T>,
+    externalSignal?: AbortSignal,
+    timeoutMs?: number,
+    tags?: string[]
+  ) {
     this.taskId = `task_${Date.now().toString(36)}_${(++taskIdCounter).toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
     this.task = task;
     this.externalSignal = externalSignal;
     this.timeoutMs = timeoutMs;
+    this.tags = new Set(tags ?? []);
     this.abortController = new AbortController();
 
     this.promise = new Promise<T>((resolve, reject) => {

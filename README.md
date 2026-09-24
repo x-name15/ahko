@@ -397,6 +397,69 @@ Ahko.loadConfig(config);
 const gateway = Ahko.fromProfile("critical-gateway");
 ```
 
+### 18. Batch Collections API (`ahko.map` & `ahko.each`)
+
+Transform collections concurrently with strict index order preservation and localized concurrency limits:
+
+```typescript
+const urls = ["/api/users", "/api/posts", "/api/comments"];
+
+// Processes concurrently (max 2 at a time), guaranteed return in original order
+const responses = await ahko.map(
+  urls,
+  async (url, index, { signal }) => {
+    const res = await fetch(url, { signal });
+    return res.json();
+  },
+  { concurrency: 2, stopOnError: true }
+);
+
+// Or iterate over items returning void:
+await ahko.each(userIds, async (id) => syncUser(id), { concurrency: 5 });
+```
+
+### 19. Dynamic & Adaptive Concurrency (AIMD Auto-Chill)
+
+Adjust concurrency dynamically on the fly or let Ahko adapt automatically to network latency:
+
+```typescript
+// Manually update concurrency at runtime:
+ahko.setConcurrency(5);
+console.log(ahko.concurrency); // 5
+
+// Or enable AIMD (Additive Increase / Multiplicative Decrease) Auto-Chill mode:
+const adaptiveAhko = new Ahko({
+  concurrency: 4,
+  adaptive: {
+    targetLatencyMs: 150, // if tasks take >150ms, cut concurrency in half
+    sampleWindowSize: 5,   // adjust after every 5 completed tasks
+    minConcurrency: 1,
+    maxConcurrency: 10,
+    backoffFactor: 0.5,
+  },
+});
+
+adaptiveAhko.on("concurrency:change", ({ previousConcurrency, currentConcurrency, reason }) => {
+  console.log(`Capacity adapted: ${previousConcurrency} -> ${currentConcurrency} (${reason})`);
+});
+```
+
+### 20. Task Tags & Selective Cancellation
+
+Classify tasks by tags, query categorical telemetry, and selectively cancel specific operations:
+
+```typescript
+// Tag tasks during scheduling:
+ahko.schedule(generateReport, { tags: ["reports", "finance"] });
+ahko.schedule(syncDatabase, { tags: ["sync"] });
+
+// Check active and pending tasks by tag:
+console.log(ahko.statsByTag("reports")); // { activeTasks: 1, pendingTasks: 0 }
+
+// Cancel all tasks associated with a tag without affecting other tasks:
+ahko.cancelByTag("reports", "User navigated away");
+```
+
 ---
 
 ## Documentation
@@ -429,7 +492,32 @@ Creates an ahko scheduler instance.
 | `concurrency` | `number` | `Infinity` | Maximum concurrent tasks allowed to run simultaneously. Must be $\ge 1$. |
 | `minIntervalMs` | `number` | `0` | Minimum interval in milliseconds between consecutive task starts. Must be $\ge 0$. |
 | `circuitBreaker` | `ICircuitBreakerOptions` | `undefined` | Optional failure threshold and cooldown reset configuration. |
+| `adaptive` | `IAdaptiveConcurrencyOptions` | `undefined` | Optional AIMD adaptive concurrency options based on task execution latency. |
 | `profile` | `string` | `undefined` | Name of declarative profile to inherit settings from. |
+
+### `ahko.concurrency`
+
+Getter returning the current concurrency capacity limit.
+
+### `ahko.setConcurrency(newConcurrency: number): void`
+
+Dynamically updates the concurrency limit of the scheduler at runtime.
+
+### `ahko.map<TItem, TResult>(items, fn, options?): Promise<TResult[]>`
+
+Concurrently transforms an iterable sequence into an array with strict index ordering. Supports localized `concurrency` limits and `stopOnError`.
+
+### `ahko.each<TItem>(items, fn, options?): Promise<void>`
+
+Iterates over an iterable sequence concurrently, executing the callback for each element.
+
+### `ahko.cancelByTag(tag: string, reason?: unknown): number`
+
+Cancels all pending, delayed, and active tasks marked with the specified tag. Returns the number of cancelled tasks.
+
+### `ahko.statsByTag(tag: string): { activeTasks: number; pendingTasks: number }`
+
+Returns active and pending task counts for a specific classification tag.
 
 ### `ahko.schedule<T>(task: ITask<T>, options?: IScheduleOptions): Promise<T>`
 
@@ -447,6 +535,7 @@ Schedules an asynchronous task with full return type inference.
 | `timeoutMs` | `number` | `undefined` | Maximum execution duration in milliseconds per attempt before aborting with `AhkoTimeoutError`. |
 | `totalTimeoutMs` | `number` | `undefined` | Total execution budget across wait time, retries, and execution. |
 | `signal` | `AbortSignal` | `undefined` | Optional external `AbortSignal` for cooperative cancellation. |
+| `tags` | `string[]` | `undefined` | Classification tags for selective cancellation and metric grouping. |
 
 ### `ahko.wrap(fn, options?)`
 
@@ -474,7 +563,7 @@ Convenience method scheduling a task under `strategy: "idle"`.
 
 ### `ahko.on(event, handler)`
 
-Subscribes to scheduler lifecycle events (`task:start`, `task:complete`, `task:fail`, `task:cancel`, `task:timeout`, `idle`). Returns an unsubscribe function.
+Subscribes to scheduler lifecycle events (`task:start`, `task:complete`, `task:fail`, `task:cancel`, `task:timeout`, `idle`, `concurrency:change`). Returns an unsubscribe function.
 
 ### `ahko.off(event, handler)`
 

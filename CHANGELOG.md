@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-09-24 — Batch Collections, Dynamic & Adaptive Concurrency, Task Tags
+
+### Added
+- **Batch Collections API (`ahko.map` & `ahko.each`)**:
+  - `ahko.map<TItem, TResult>(items, fn, options?)`: Concurrently transforms any iterable sequence while strictly preserving original element order.
+  - `ahko.each<TItem>(items, fn, options?)`: Concurrently iterates over any sequence returning `Promise<void>`.
+  - Supports localized concurrency caps per-batch (`options.concurrency`), falling back to scheduler concurrency when omitted.
+  - Fail-fast flow control via `stopOnError: true` (aborts remaining tasks immediately and rejects) or settled error propagation via `stopOnError: false` (default).
+  - Native integration with `signal`, `retry`, `tags`, and priority options.
+- **Dynamic & Adaptive Concurrency (AIMD Auto-Chill Mode)**:
+  - Runtime dynamic concurrency reconfiguration via `ahko.setConcurrency(n)` and getter `ahko.concurrency`.
+  - Additive Increase / Multiplicative Decrease (AIMD) algorithm (`AdaptiveCoordinator`) adjusting scheduler capacity based on real-time task latency (`options.adaptive`).
+  - Seamlessly handles network latency spikes by scaling down concurrency on congestion and recovering when latency drops.
+  - Lifecycle event `"concurrency:change"` emitting `previousConcurrency`, `currentConcurrency`, and human-readable `reason`.
+  - Telemetry metrics in `ahko.stats().adaptive`: `currentConcurrency`, `averageLatencyMs`, `samplesRecorded`.
+- **Task Tags & Selective Cancellation**:
+  - Categorize tasks via `tags: string[]` in `schedule()`, `map()`, or declarative profiles.
+  - Selectively cancel related tasks via `ahko.cancelByTag(tag, reason?)` without interrupting other pending or active workloads.
+  - Inspect workload density per category via `ahko.statsByTag(tag)` (`activeTasks` and `pendingTasks`).
+  - Memory-safe automatic tag indexing and instant cleanup upon task runner settlement.
+- **Declarative Configuration Schema Expansion**:
+  - Added `adaptive` policy and `tags` classification to `schema.json` and `config.ahko.example.json`.
+- **New Runnable Examples**:
+  - `examples/09-batch-collections.mjs`: Concurrent mapping over iterables with strict index ordering.
+  - `examples/10-adaptive-concurrency.mjs`: AIMD Auto-Chill mode reacting to upstream latency.
+  - `examples/11-tag-cancellation.mjs`: Tagged workload telemetry and selective cancellation.
+
+---
+
 ## [1.1.0] - 2026-09-23 — Declarative Config, Circuit Breaker & Priority Queue
 
 ### Added

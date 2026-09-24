@@ -101,4 +101,15 @@
 - **Decision 30: Remediation of CodeQL Static Analysis Alerts**:
   Remediated CodeQL alert #4 in `src/__tests__/e2e.test.ts` (removed unused `externalController`) and alert #3 in `examples/04-retry-backoff-jitter.mjs` (removed unused `sleep` helper).
 
+---
+
+## 2026-09-24 — Milestone 1.1.5 Architecture Decisions
+
+- **Decision 31: Batch Collections API (`ahko.map` & `ahko.each`) with Strict Order Preservation**:
+  Implemented concurrent collection mapping preserving original index ordering regardless of completion order. Localized concurrency options limit batch dispatch without inflating global scheduler queues, while unhandled rejections are safely contained when `stopOnError: true` triggers peer cancellations.
+- **Decision 32: Dynamic & Adaptive Concurrency with AIMD Auto-Chill Algorithm**:
+  Added `ahko.setConcurrency()` for instant capacity adjustment and `AdaptiveCoordinator` implementing Additive Increase / Multiplicative Decrease (AIMD) based on execution latency feedback. If average duration over a sample window exceeds `targetLatencyMs`, capacity scales down multiplicatively by `backoffFactor` down to `minConcurrency`; when healthy, capacity increases additively by +1 up to `maxConcurrency`. Emits `"concurrency:change"` lifecycle events and exposes telemetry via `ahko.stats().adaptive`.
+- **Decision 33: Tag Indexing and Selective Cancellation**:
+  Added `tags?: string[]` classification on tasks. Maintained a reverse index `tagIndex: Map<string, Set<TaskRunner>>` for instant $O(1)$ lookup during `cancelByTag()` and `statsByTag()`. Runners are automatically detached upon settlement via `.finally()`, guaranteeing zero memory retention of completed tasks.
+
 

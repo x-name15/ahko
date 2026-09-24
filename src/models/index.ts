@@ -9,4 +9,6 @@ export * from "./events.model.js";
 export * from "./circuit-breaker.model.js";
 export * from "./priority.model.js";
 export * from "./config.model.js";
+export * from "./batch.model.js";
+export * from "./adaptive.model.js";
 

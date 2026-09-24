@@ -1,3 +1,4 @@
+import type { IAdaptiveStats } from "./adaptive.model.js";
 import type { ECircuitState } from "./circuit-breaker.model.js";
 
 /**
@@ -36,4 +37,7 @@ export interface IAhkoStats {
 
   /** Current state of the scheduler circuit breaker, if configured */
   circuitState?: ECircuitState;
+
+  /** Telemetry from the adaptive concurrency controller, if configured */
+  adaptive?: IAdaptiveStats;
 }

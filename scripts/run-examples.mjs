@@ -10,6 +10,9 @@ const examples = [
   "06-graceful-shutdown.mjs",
   "07-circuit-breaker.mjs",
   "08-priority-queue.mjs",
+  "09-batch-collections.mjs",
+  "10-adaptive-concurrency.mjs",
+  "11-tag-cancellation.mjs",
 ];
 
 console.log("Running all ahko examples...\n");

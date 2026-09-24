@@ -1,3 +1,4 @@
+import type { IAdaptiveConcurrencyOptions } from "./adaptive.model.js";
 import type { ICircuitBreakerOptions } from "./circuit-breaker.model.js";
 import type { TTaskPriority } from "./priority.model.js";
 import type { IRetryOptions } from "./retry.model.js";
@@ -72,6 +73,11 @@ export interface IScheduleOptions {
    * If aborted while running, the abort event is propagated to the task context signal.
    */
   signal?: AbortSignal;
+
+  /**
+   * Optional tags for classifying tasks and enabling selective cancellation (e.g. `ahko.cancelByTag()`).
+   */
+  tags?: string[];
 }
 
 /**
@@ -97,6 +103,11 @@ export interface IAhkoOptions {
    * Optional circuit breaker policy to guard against cascading failures.
    */
   circuitBreaker?: ICircuitBreakerOptions;
+
+  /**
+   * Optional adaptive concurrency policy (AIMD Auto-Chill mode) based on real-time task latency.
+   */
+  adaptive?: IAdaptiveConcurrencyOptions;
 
   /**
    * Optional named profile from `config.ahko.json` to inherit configuration defaults from.

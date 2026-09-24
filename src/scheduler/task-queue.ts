@@ -1,6 +1,7 @@
 import { AhkoCircuitBreakerOpenError } from "../errors/circuit-breaker.error.js";
 import { AhkoConfigurationError } from "../errors/configuration.error.js";
 import { AhkoTimeoutError } from "../errors/timeout.error.js";
+import type { IAdaptiveConcurrencyOptions } from "../models/adaptive.model.js";
 import type { ICircuitBreakerOptions } from "../models/circuit-breaker.model.js";
 import type { IScheduleOptions } from "../models/options.model.js";
 import { resolvePriorityWeight } from "../models/priority.model.js";
@@ -8,6 +9,7 @@ import type { IAhkoStats } from "../models/stats.model.js";
 import { ETaskState } from "../models/state.model.js";
 import { EScheduleStrategy } from "../models/strategy.model.js";
 import { calculateBackoff } from "../retry/backoff.js";
+import { AdaptiveCoordinator } from "./adaptive-coordinator.js";
 import { CircuitBreakerCoordinator } from "./circuit-breaker.js";
 import { DebounceCoordinator } from "./debounce-coordinator.js";
 import { IdleScheduler, type IIdleHandle } from "./idle-scheduler.js";
@@ -41,11 +43,12 @@ interface IRetryEntry {
 
 /**
  * Memory-safe priority-aware task queue managing concurrency allocation,
- * rate limiting, circuit breaker protection, flow control (pause/resume), and task lifecycle counters.
+ * rate limiting, circuit breaker protection, dynamic & adaptive concurrency,
+ * tags, flow control (pause/resume), and task lifecycle counters.
  */
 export class TaskQueue {
   /** Maximum concurrent active tasks */
-  public readonly concurrency: number;
+  private _concurrency: number;
 
   /** Minimum interval in milliseconds between consecutive task starts */
   public readonly minIntervalMs: number;
@@ -71,6 +74,9 @@ export class TaskQueue {
   /** Set of tasks currently awaiting a retry backoff timer */
   private readonly retryEntries = new Set<IRetryEntry>();
 
+  /** Tag index for selective cancellation and task classification */
+  private readonly tagIndex = new Map<string, Set<TaskRunner<unknown>>>();
+
   /** Coordinator for debounced tasks with key coalescing */
   public readonly debounceCoordinator = new DebounceCoordinator();
 
@@ -82,6 +88,9 @@ export class TaskQueue {
 
   /** Circuit breaker coordinator if configured */
   public readonly circuitBreakerCoordinator?: CircuitBreakerCoordinator;
+
+  /** Adaptive concurrency coordinator if configured */
+  public readonly adaptiveCoordinator?: AdaptiveCoordinator;
 
   /** Pause state flag */
   private _isPaused = false;
@@ -116,9 +125,15 @@ export class TaskQueue {
    * @param concurrency - Maximum concurrent tasks (defaults to Infinity).
    * @param minIntervalMs - Minimum interval in milliseconds between task dispatches.
    * @param circuitBreakerOptions - Optional circuit breaker policy configuration.
+   * @param adaptiveOptions - Optional adaptive concurrency policy configuration.
    * @throws {AhkoConfigurationError} If concurrency is less than 1 or minIntervalMs is invalid.
    */
-  constructor(concurrency = Infinity, minIntervalMs = 0, circuitBreakerOptions?: ICircuitBreakerOptions) {
+  constructor(
+    concurrency = Infinity,
+    minIntervalMs = 0,
+    circuitBreakerOptions?: ICircuitBreakerOptions,
+    adaptiveOptions?: IAdaptiveConcurrencyOptions
+  ) {
     if (Number.isNaN(concurrency) || concurrency < 1) {
       throw new AhkoConfigurationError(
         `Invalid concurrency "${concurrency}". Must be a number greater than or equal to 1.`
@@ -134,15 +149,70 @@ export class TaskQueue {
         `Invalid minIntervalMs "${minIntervalMs}". minIntervalMs must be a non-negative finite number.`
       );
     }
-    this.concurrency = concurrency;
+    this._concurrency = concurrency;
     this.minIntervalMs = minIntervalMs;
 
     if (circuitBreakerOptions) {
       this.circuitBreakerCoordinator = new CircuitBreakerCoordinator(circuitBreakerOptions);
     }
 
+    if (adaptiveOptions) {
+      this.adaptiveCoordinator = new AdaptiveCoordinator(
+        adaptiveOptions,
+        this._concurrency,
+        (previous, current, reason) => {
+          this._concurrency = current;
+          this.emitter.emit("concurrency:change", {
+            previousConcurrency: previous,
+            currentConcurrency: current,
+            reason,
+          });
+          this.pump();
+        }
+      );
+      this._concurrency = this.adaptiveCoordinator.currentConcurrency;
+    }
+
     this.debounceCoordinator.onSettled = () => this.checkIdle();
     this.throttleCoordinator.onSettled = () => this.checkIdle();
+  }
+
+  /**
+   * Current concurrency capacity limit.
+   */
+  public get concurrency(): number {
+    return this._concurrency;
+  }
+
+  /**
+   * Dynamically adjusts the concurrency limit at runtime.
+   *
+   * @param newConcurrency - New maximum concurrency (must be >= 1).
+   * @throws {AhkoConfigurationError} If newConcurrency is less than 1.
+   */
+  public setConcurrency(newConcurrency: number): void {
+    if (Number.isNaN(newConcurrency) || newConcurrency < 1) {
+      throw new AhkoConfigurationError(
+        `Invalid concurrency "${newConcurrency}". Must be a number greater than or equal to 1.`
+      );
+    }
+
+    const previous = this._concurrency;
+    this._concurrency = newConcurrency;
+
+    if (this.adaptiveCoordinator) {
+      this.adaptiveCoordinator.setConcurrency(newConcurrency);
+    }
+
+    if (newConcurrency !== previous) {
+      this.emitter.emit("concurrency:change", {
+        previousConcurrency: previous,
+        currentConcurrency: newConcurrency,
+        reason: "Manual concurrency update",
+      });
+    }
+
+    this.pump();
   }
 
   /**
@@ -167,6 +237,84 @@ export class TaskQueue {
    */
   public isPaused(): boolean {
     return this._isPaused;
+  }
+
+  /**
+   * Cancels all pending, delayed, and active tasks marked with the specified tag.
+   *
+   * @param tag - Tag identifier to match.
+   * @param reason - Optional cancellation reason.
+   * @returns Total count of tasks cancelled.
+   */
+  public cancelByTag(tag: string, reason?: unknown): number {
+    const runners = this.tagIndex.get(tag);
+    if (!runners || runners.size === 0) {
+      return 0;
+    }
+
+    const list = Array.from(runners);
+    let count = 0;
+    for (const runner of list) {
+      if (
+        runner.state === ETaskState.PENDING ||
+        runner.state === ETaskState.RUNNING
+      ) {
+        runner.cancel(reason ?? `Task cancelled by tag "${tag}"`);
+        count++;
+      }
+    }
+    return count;
+  }
+
+  /**
+   * Returns active and pending task counts for a given tag.
+   *
+   * @param tag - Tag identifier.
+   */
+  public getStatsByTag(tag: string): { activeTasks: number; pendingTasks: number } {
+    const runners = this.tagIndex.get(tag);
+    if (!runners) {
+      return { activeTasks: 0, pendingTasks: 0 };
+    }
+    let active = 0;
+    let pending = 0;
+    for (const runner of runners) {
+      if (runner.state === ETaskState.RUNNING) {
+        active++;
+      } else if (runner.state === ETaskState.PENDING) {
+        pending++;
+      }
+    }
+    return { activeTasks: active, pendingTasks: pending };
+  }
+
+  /**
+   * Indexes a runner under all its associated tags.
+   */
+  private indexTaskTags(runner: TaskRunner<unknown>): void {
+    for (const tag of runner.tags) {
+      let set = this.tagIndex.get(tag);
+      if (!set) {
+        set = new Set();
+        this.tagIndex.set(tag, set);
+      }
+      set.add(runner);
+    }
+  }
+
+  /**
+   * Removes a runner from the tag index upon settlement.
+   */
+  private cleanupTaskTags(runner: TaskRunner<unknown>): void {
+    for (const tag of runner.tags) {
+      const set = this.tagIndex.get(tag);
+      if (set) {
+        set.delete(runner);
+        if (set.size === 0) {
+          this.tagIndex.delete(tag);
+        }
+      }
+    }
   }
 
   /**
@@ -292,6 +440,16 @@ export class TaskQueue {
     if (options) {
       this.runnerOptions.set(runner as TaskRunner<unknown>, options);
     }
+
+    // Index runner by tags
+    this.indexTaskTags(runner as TaskRunner<unknown>);
+
+    // Clean up tag index as soon as runner settles
+    runner.promise
+      .finally(() => {
+        this.cleanupTaskTags(runner as TaskRunner<unknown>);
+      })
+      .catch(() => {});
 
     if (runner.state === ETaskState.CANCELLED) {
       this.cancelledTasks++;
@@ -501,7 +659,7 @@ export class TaskQueue {
    * and queue is not paused.
    */
   private pump(): void {
-    if (this._isPaused || this.queue.length === 0 || this.activeRunners.size >= this.concurrency) {
+    if (this._isPaused || this.queue.length === 0 || this.activeRunners.size >= this._concurrency) {
       return;
     }
 
@@ -520,7 +678,7 @@ export class TaskQueue {
       }
     }
 
-    while (!this._isPaused && this.activeRunners.size < this.concurrency && this.queue.length > 0) {
+    while (!this._isPaused && this.activeRunners.size < this._concurrency && this.queue.length > 0) {
       if (this.minIntervalMs > 0 && this.lastTaskStartTime > 0) {
         const now = Date.now();
         const elapsed = now - this.lastTaskStartTime;
@@ -570,7 +728,7 @@ export class TaskQueue {
       void this.executeRunner(runner);
 
       if (this.minIntervalMs > 0) {
-        if (this.queue.length > 0 && this.activeRunners.size < this.concurrency) {
+        if (this.queue.length > 0 && this.activeRunners.size < this._concurrency) {
           if (this.rateLimitTimer === undefined) {
             this.rateLimitTimer = setTimeout(() => {
               this.rateLimitTimer = undefined;
@@ -598,6 +756,7 @@ export class TaskQueue {
     try {
       const result = await runner.run();
       this.circuitBreakerCoordinator?.recordSuccess();
+      this.adaptiveCoordinator?.recordDuration(runner.lastDurationMs);
       this.completedTasks++;
       this.activeRunners.delete(runner);
       this.runnerOptions.delete(runner);
@@ -640,6 +799,9 @@ export class TaskQueue {
       if (this.circuitBreakerCoordinator && !(error instanceof AhkoCircuitBreakerOpenError)) {
         this.circuitBreakerCoordinator.recordFailure(error);
       }
+
+      // Record duration in adaptive coordinator
+      this.adaptiveCoordinator?.recordDuration(runner.lastDurationMs);
 
       if (runner.state === ETaskState.TIMED_OUT || error instanceof AhkoTimeoutError) {
         this.timedOutTasks++;
@@ -872,9 +1034,10 @@ export class TaskQueue {
       timedOutTasks: this.timedOutTasks,
       retriedTasks: this.retriedTasks,
       totalDispatched: this.totalDispatched,
-      capacity: this.concurrency,
+      capacity: this._concurrency,
       isPaused: this._isPaused,
       circuitState: this.circuitBreakerCoordinator?.state,
+      adaptive: this.adaptiveCoordinator?.getStats(),
     });
   }
 }

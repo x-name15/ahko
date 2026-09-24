@@ -1,3 +1,4 @@
+import { AhkoCancellationError } from "./errors/cancellation.error.js";
 import { AhkoConfigurationError } from "./errors/configuration.error.js";
 import {
   getActiveConfig,
@@ -6,8 +7,10 @@ import {
   loadConfigFile,
   resetConfig,
 } from "./config/config-loader.js";
+import type { IBatchOptions, IBatchMapOptions } from "./models/batch.model.js";
 import type { ECircuitState } from "./models/circuit-breaker.model.js";
 import type { IAhkoFileConfig, IAhkoProfileConfig } from "./models/config.model.js";
+import type { ITaskContext } from "./models/context.model.js";
 import type { TAhkoEventName, TAhkoEventHandler, TAhkoUnsubscribe } from "./models/events.model.js";
 import type { IAhkoOptions, IScheduleOptions } from "./models/options.model.js";
 import type { IAhkoStats } from "./models/stats.model.js";
@@ -89,6 +92,7 @@ export class Ahko {
       ...profile,
       ...overrides,
       circuitBreaker: overrides?.circuitBreaker ?? profile?.circuitBreaker,
+      adaptive: overrides?.adaptive ?? profile?.adaptive,
     });
   }
 
@@ -110,6 +114,7 @@ export class Ahko {
       ...profile,
       ...options,
       circuitBreaker: options?.circuitBreaker ?? profile?.circuitBreaker,
+      adaptive: options?.adaptive ?? profile?.adaptive,
     };
 
     if (profile) {
@@ -118,14 +123,33 @@ export class Ahko {
         retry: profile.retry,
         timeoutMs: profile.timeoutMs,
         totalTimeoutMs: profile.totalTimeoutMs,
+        tags: profile.tags,
       };
     }
 
     this.queue = new TaskQueue(
       mergedOptions.concurrency,
       mergedOptions.minIntervalMs,
-      mergedOptions.circuitBreaker
+      mergedOptions.circuitBreaker,
+      mergedOptions.adaptive
     );
+  }
+
+  /**
+   * Current concurrency limit.
+   */
+  public get concurrency(): number {
+    return this.queue.concurrency;
+  }
+
+  /**
+   * Dynamically updates the concurrency limit of the scheduler.
+   *
+   * @param concurrency - New maximum concurrency (must be >= 1).
+   * @throws {AhkoConfigurationError} If concurrency is invalid.
+   */
+  public setConcurrency(concurrency: number): void {
+    this.queue.setConcurrency(concurrency);
   }
 
   /**
@@ -217,9 +241,11 @@ export class Ahko {
       throw new AhkoConfigurationError("Task must be a valid function.");
     }
 
+    const mergedTags = options?.tags ?? this.defaultScheduleOptions?.tags;
     const mergedOptions: IScheduleOptions = {
       ...this.defaultScheduleOptions,
       ...options,
+      tags: mergedTags,
     };
 
     const strategy = mergedOptions.strategy ?? EScheduleStrategy.IMMEDIATE;
@@ -266,7 +292,12 @@ export class Ahko {
       );
     }
 
-    const runner = new TaskRunner<T>(task, mergedOptions.signal, mergedOptions.timeoutMs);
+    const runner = new TaskRunner<T>(
+      task,
+      mergedOptions.signal,
+      mergedOptions.timeoutMs,
+      mergedOptions.tags
+    );
     return this.queue.enqueue(runner, mergedOptions);
   }
 
@@ -342,6 +373,224 @@ export class Ahko {
       key,
       waitMs,
     });
+  }
+
+  /**
+   * Transforms an iterable of items concurrently using an asynchronous mapping function.
+   *
+   * Results are guaranteed to be returned in the original index order.
+   * Concurrency can be capped per-batch or fall back to the scheduler's global limit.
+   *
+   * @template TItem - Type of input elements.
+   * @template TResult - Type of mapped elements.
+   * @param items - Iterable sequence of items to process.
+   * @param fn - Mapper callback receiving item, index, and task context.
+   * @param options - Batch execution options (concurrency, stopOnError, retry, signal, tags, etc.).
+   * @returns Array of transformed results in index order.
+   *
+   * @throws {AhkoConfigurationError} If fn is not a function or concurrency is invalid.
+   * @throws {AhkoCancellationError} If batch or item is cancelled.
+   *
+   * @example
+   * ```typescript
+   * const urls = ["/api/1", "/api/2", "/api/3"];
+   * const data = await ahko.map(urls, async (url, i, { signal }) => {
+   *   const res = await fetch(url, { signal });
+   *   return res.json();
+   * }, { concurrency: 2 });
+   * ```
+   */
+  public async map<TItem, TResult>(
+    items: Iterable<TItem>,
+    fn: (item: TItem, index: number, context: ITaskContext) => Promise<TResult> | TResult,
+    options?: IBatchMapOptions<TItem, TResult>
+  ): Promise<TResult[]> {
+    if (typeof fn !== "function") {
+      throw new AhkoConfigurationError("Mapper function must be a valid function.");
+    }
+
+    if (
+      options?.concurrency !== undefined &&
+      (typeof options.concurrency !== "number" ||
+        Number.isNaN(options.concurrency) ||
+        options.concurrency < 1)
+    ) {
+      throw new AhkoConfigurationError(
+        `Invalid concurrency "${options.concurrency}". Must be a number greater than or equal to 1.`
+      );
+    }
+
+    const list = Array.from(items);
+    if (list.length === 0) {
+      return [];
+    }
+
+    const { concurrency, stopOnError = false, signal: externalSignal, ...scheduleOpts } =
+      options ?? {};
+
+    if (externalSignal?.aborted) {
+      throw new AhkoCancellationError(
+        externalSignal.reason ? `Batch cancelled: ${String(externalSignal.reason)}` : "Batch cancelled"
+      );
+    }
+
+    const abortController = new AbortController();
+
+    const results = new Array<TResult>(list.length);
+    let firstError: unknown = undefined;
+    let hasAborted = false;
+
+    const localizedLimit =
+      concurrency !== undefined
+        ? Math.floor(concurrency)
+        : Number.isFinite(this.concurrency)
+        ? this.concurrency
+        : Infinity;
+
+    return new Promise<TResult[]>((resolve, reject) => {
+      let currentIndex = 0;
+      let activeCount = 0;
+      let settledCount = 0;
+
+      const onExternalAbort = () => {
+        const reason = externalSignal?.reason ?? "Batch cancelled by external signal";
+        const err = new AhkoCancellationError(
+          typeof reason === "string" ? reason : "Batch cancelled by external signal"
+        );
+        cleanupAndReject(err);
+      };
+
+      if (externalSignal) {
+        externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+      }
+
+      const cleanupAndReject = (err: unknown) => {
+        if (!hasAborted) {
+          hasAborted = true;
+          abortController.abort(err);
+        }
+        if (externalSignal) {
+          externalSignal.removeEventListener("abort", onExternalAbort);
+        }
+        reject(err);
+      };
+
+      const checkCompletion = () => {
+        if (settledCount === list.length) {
+          if (externalSignal) {
+            externalSignal.removeEventListener("abort", onExternalAbort);
+          }
+          if (firstError !== undefined) {
+            reject(firstError);
+          } else {
+            resolve(results);
+          }
+        }
+      };
+
+      const launchNext = () => {
+        if (hasAborted && stopOnError) {
+          return;
+        }
+
+        while (
+          currentIndex < list.length &&
+          activeCount < localizedLimit &&
+          !(hasAborted && stopOnError)
+        ) {
+          const index = currentIndex++;
+          const item = list[index];
+          activeCount++;
+
+          const taskPromise = this.schedule(
+            (context) => fn(item, index, context),
+            {
+              ...scheduleOpts,
+              signal: abortController.signal,
+            }
+          );
+
+          taskPromise
+            .then((result) => {
+              results[index] = result;
+            })
+            .catch((err) => {
+              if (firstError === undefined) {
+                firstError = err;
+              }
+              if (stopOnError && !hasAborted) {
+                cleanupAndReject(err);
+                return;
+              }
+            })
+            .finally(() => {
+              activeCount--;
+              settledCount++;
+              if (hasAborted && stopOnError) {
+                return;
+              }
+              if (currentIndex < list.length) {
+                launchNext();
+              } else {
+                checkCompletion();
+              }
+            });
+        }
+      };
+
+      if (abortController.signal.aborted) {
+        cleanupAndReject(abortController.signal.reason);
+        return;
+      }
+
+      launchNext();
+    });
+  }
+
+  /**
+   * Iterates sequentially or concurrently over an iterable sequence of items,
+   * executing the callback function for each element.
+   *
+   * @template TItem - Type of input elements.
+   * @param items - Iterable sequence of items to process.
+   * @param fn - Callback receiving item, index, and task context.
+   * @param options - Batch execution options.
+   * @returns Promise resolving once all items have finished executing.
+   *
+   * @example
+   * ```typescript
+   * await ahko.each(userQueue, async (user, index, { signal }) => {
+   *   await sendWelcomeEmail(user, { signal });
+   * }, { concurrency: 5 });
+   * ```
+   */
+  public async each<TItem>(
+    items: Iterable<TItem>,
+    fn: (item: TItem, index: number, context: ITaskContext) => Promise<void> | void,
+    options?: IBatchOptions
+  ): Promise<void> {
+    await this.map(items, fn, options);
+  }
+
+  /**
+   * Cancels all pending, delayed, and active tasks tagged with the given tag.
+   *
+   * @param tag - Tag identifier.
+   * @param reason - Optional cancellation reason.
+   * @returns Total number of tasks cancelled.
+   */
+  public cancelByTag(tag: string, reason?: unknown): number {
+    return this.queue.cancelByTag(tag, reason);
+  }
+
+  /**
+   * Retrieves active and pending task counts for a given tag.
+   *
+   * @param tag - Tag identifier.
+   * @returns Object with activeTasks and pendingTasks counts.
+   */
+  public statsByTag(tag: string): { activeTasks: number; pendingTasks: number } {
+    return this.queue.getStatsByTag(tag);
   }
 
   /**

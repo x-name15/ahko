@@ -40,6 +40,13 @@ export interface IAhkoEventMap {
   idle: {
     timestamp: number;
   };
+
+  /** Emitted when scheduler concurrency is dynamically or adaptively updated */
+  "concurrency:change": {
+    previousConcurrency: number;
+    currentConcurrency: number;
+    reason: string;
+  };
 }
 
 /**

@@ -42,6 +42,10 @@ export type {
   TTaskPriority,
   IAhkoFileConfig,
   IAhkoProfileConfig,
+  IBatchOptions,
+  IBatchMapOptions,
+  IAdaptiveConcurrencyOptions,
+  IAdaptiveStats,
 } from "./models/index.js";
 
 // Config utilities
@@ -53,8 +57,9 @@ export {
   getProfileConfig,
 } from "./config/index.js";
 
-// Circuit Breaker Coordinator
+// Circuit Breaker & Adaptive Coordinators
 export { CircuitBreakerCoordinator } from "./scheduler/circuit-breaker.js";
+export { AdaptiveCoordinator } from "./scheduler/adaptive-coordinator.js";
 
 // Retry utilities
 export {

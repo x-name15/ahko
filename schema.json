@@ -123,6 +123,50 @@
           "required": ["failureThreshold", "resetTimeoutMs"],
           "additionalProperties": false,
           "description": "Circuit breaker protection policy."
+        },
+        "tags": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Default classification tags associated with tasks scheduled under this profile."
+        },
+        "adaptive": {
+          "type": "object",
+          "properties": {
+            "targetLatencyMs": {
+              "type": "number",
+              "minimum": 1,
+              "description": "Target latency threshold in milliseconds. Exceeding this triggers multiplicative decrease."
+            },
+            "sampleWindowSize": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 10,
+              "description": "Number of settled task latency samples required before adjusting concurrency."
+            },
+            "minConcurrency": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1,
+              "description": "Floor limit for adaptive concurrency reduction."
+            },
+            "maxConcurrency": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Ceiling limit for adaptive concurrency increase."
+            },
+            "backoffFactor": {
+              "type": "number",
+              "minimum": 0.1,
+              "maximum": 0.99,
+              "default": 0.5,
+              "description": "Multiplicative decrease factor when target latency is exceeded (e.g. 0.5 cuts concurrency in half)."
+            }
+          },
+          "required": ["targetLatencyMs"],
+          "additionalProperties": false,
+          "description": "AIMD adaptive concurrency policy for dynamic congestion avoidance."
         }
       },
       "additionalProperties": false

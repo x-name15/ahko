@@ -28,6 +28,9 @@ npm run build
 | **06: Graceful Shutdown** | `node examples/06-graceful-shutdown.mjs` | Safe process termination clearing backlog (`ahko.clear`) and awaiting in-flight work (`ahko.chill`). |
 | **07: Circuit Breaker** | `node examples/07-circuit-breaker.mjs` | Protecting downstream services with failure threshold trip, fast-failing, and cool-down recovery probe. |
 | **08: Priority & Pause/Resume** | `node examples/08-priority-queue.mjs` | Priority-based task dispatching and queue flow control via `pause()` and `resume()`. |
+| **09: Batch Collections** | `node examples/09-batch-collections.mjs` | Concurrent mapping over iterables with strict index ordering (`ahko.map`, `ahko.each`). |
+| **10: Adaptive Concurrency** | `node examples/10-adaptive-concurrency.mjs` | AIMD Auto-Chill mode adapting concurrency to real-time execution latency. |
+| **11: Tag Cancellation** | `node examples/11-tag-cancellation.mjs` | Classifying tasks with tags, inspecting tag stats, and selective cancellation. |
 
 ---
 
@@ -50,4 +53,7 @@ node examples/05-idle-telemetry.mjs
 node examples/06-graceful-shutdown.mjs
 node examples/07-circuit-breaker.mjs
 node examples/08-priority-queue.mjs
+node examples/09-batch-collections.mjs
+node examples/10-adaptive-concurrency.mjs
+node examples/11-tag-cancellation.mjs
 ```

@@ -32,6 +32,17 @@
       "concurrency": 2,
       "strategy": "idle",
       "priority": "low"
+    },
+    "adaptive-api": {
+      "concurrency": 10,
+      "tags": ["api", "network"],
+      "adaptive": {
+        "targetLatencyMs": 200,
+        "sampleWindowSize": 5,
+        "minConcurrency": 2,
+        "maxConcurrency": 15,
+        "backoffFactor": 0.5
+      }
     }
   }
 }
