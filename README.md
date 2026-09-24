@@ -33,6 +33,9 @@
   <a href="https://github.com/x-name15/ahko/issues">
     <img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome">
   </a>
+  <a href="https://buymeacoffee.com/mrjacket">
+    <img src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-ffdd00?logo=buy-me-a-coffee&logoColor=black" alt="Buy Me A Coffee">
+  </a>
 </p>
 
 `ahko` is a low-energy task scheduler for JavaScript and TypeScript.
@@ -605,6 +608,16 @@ All scheduler errors inherit from `AhkoError`:
 - `AhkoQueueError`: Thrown when queue constraints are violated.
 - `AhkoTimeoutError`: Thrown when a task exceeds its configured duration or totalTimeoutMs.
 - `AhkoCircuitBreakerOpenError`: Thrown when task execution is fast-failed because the circuit breaker is OPEN.
+
+---
+
+## Support & Sponsoring
+
+If you liked this library or want to support my work, I'd be eternally grateful for a warm coffee! ☕ <3
+
+<a href="https://buymeacoffee.com/mrjacket" target="_blank">
+  <img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" width="180">
+</a>
 
 ---
 
